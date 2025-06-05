@@ -9,6 +9,7 @@ ffi.cdef("""
         char* zz_p_sub(const char* a, const char* b);
         char* zz_p_mul(const char* a, const char* b);
         char* zz_p_div(const char* a, const char* b);
+        char* zz_p_pow(const char* base_str, long exponent);
         char* zz_p_neg(const char* a);
         char* zz_p_inv(const char* a);
         int zz_p_eq(const char* a, const char* b)
@@ -57,6 +58,14 @@ def zz_p_div(numerator: str, denumerator: str) -> str:
     a_c = ffi.new("char[]", numerator.encode())
     b_c = ffi.new("char[]", denumerator.encode())
     result_c = lib.zz_p_div(a_c, b_c)
+    result = ffi.string(result_c).decode()
+    return result
+
+def zz_p_pow(base: str, exponent: str) -> str:
+    """Compute base to the power of exponent."""
+    a_c = ffi.new("char[]", base.encode())
+    b_c = ffi.new("char[]", exponent.encode())
+    result_c = lib.zz_p_pow(a_c, b_c)
     result = ffi.string(result_c).decode()
     return result
 

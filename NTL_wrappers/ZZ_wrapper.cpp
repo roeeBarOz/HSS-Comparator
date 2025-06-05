@@ -187,4 +187,18 @@ extern "C" {
         return zz_div(zz_abs(zz_mul(a, b)), zz_gcd(a, b));
     }
 
+    char* zz_random_invertible_mod_n(const char* n) {
+        ZZ* zzn = from_string(n);
+        ZZ* res = new ZZ();
+        
+        do {
+            *res = RandomBnd(*zzn);
+        } while (IsZero(*res) || GCD(*res, *zzn) != 1);
+        
+        char* result = to_string(res);
+        free_ZZ(zzn);
+        free_ZZ(res);
+        return result;
+    }
+
 }

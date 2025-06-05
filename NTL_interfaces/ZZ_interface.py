@@ -21,6 +21,7 @@ ffi.cdef("""
         int zz_eq(const char* a, const char* b);
         int zz_lt(const char* a, const char* b);
         char* zz_lcm(const char* a, const char* b);
+        char* zz_random_invertible_mod_n(const char* n);
 """)
 
 lib = ffi.dlopen("./libntl_wrappers.so")
@@ -152,4 +153,9 @@ def zz_lcm(a: str, b: str) -> str:
     """Compute the least common multiple of two ZZ numbers."""
     a_c = ffi.new("char[]", a.encode())
     b_c = ffi.new("char[]", b.encode())
-    return lib.zz_lcm(a_c, b_c)
+    return ffi.string(lib.zz_lcm(a_c, b_c)).decode()
+
+def zz_random_invertible_mod_n(n: str) -> str:
+    """Generate a random number which is invertible modulu n."""
+    n_c = ffi.new("char[]", n.encode())
+    return ffi.string(lib.zz_random_invertible_mod_n(n_c)).encode()

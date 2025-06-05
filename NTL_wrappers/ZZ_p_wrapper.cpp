@@ -80,6 +80,13 @@ extern "C" {
         return zz_p_to_string(res);
     }
 
+    char* zz_p_pow(const char* base_str, long exponent) {
+        ZZ_p* base = zz_p_from_string(base_str);
+        ZZ_p* result = new ZZ_p(power(*base, exponent));
+        zz_p_free(base);
+        return zz_p_to_string(result);
+    }
+
     char* zz_p_neg(const char* a) {
         ZZ_p* x = zz_p_from_string(a);
         ZZ_p* res = new ZZ_p(-(*x));
