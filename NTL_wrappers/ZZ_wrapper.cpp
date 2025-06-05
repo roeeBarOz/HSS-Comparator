@@ -183,4 +183,8 @@ extern "C" {
         return result;
     }
 
+    char* zz_lcm(const char* a, const char* b) {
+        return zz_div(zz_abs(zz_mul(a, b)), zz_gcd(a, b));
+    }
+
 }
