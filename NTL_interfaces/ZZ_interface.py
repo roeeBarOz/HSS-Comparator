@@ -20,6 +20,7 @@ ffi.cdef("""
         char* zz_next_prime(const char* a);
         int zz_eq(const char* a, const char* b);
         int zz_lt(const char* a, const char* b);
+        char* zz_lcm(const char* a, const char* b);
 """)
 
 lib = ffi.dlopen("./libntl_wrappers.so")
@@ -146,3 +147,9 @@ def zz_lt(a: str, b: str) -> bool:
     b_c = ffi.new("char[]", b.encode())
     result = lib.zz_lt(a_c, b_c)
     return result != 0
+
+def zz_lcm(a: str, b: str) -> str:
+    """Compute the least common multiple of two ZZ numbers."""
+    a_c = ffi.new("char[]", a.encode())
+    b_c = ffi.new("char[]", b.encode())
+    return lib.zz_lcm(a_c, b_c)
