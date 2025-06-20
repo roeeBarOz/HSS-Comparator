@@ -144,13 +144,13 @@ extern "C" {
     }
 
     char* zz_random(int bits) {
-        ZZ* res = new ZZ();
+        ZZ* res = new ZZ(INIT_SIZE, bits);
         RandomBits(*res, bits);
         return to_string(res);
     }
 
     char* zz_random_prime(int bits, int certainty) {
-        ZZ* res = new ZZ();
+        ZZ* res = new ZZ(INIT_SIZE, bits);
         RandomPrime(*res, bits, certainty);
         return to_string(res);
     }
@@ -194,6 +194,20 @@ extern "C" {
         do {
             *res = RandomBnd(*zzn);
         } while (IsZero(*res) || GCD(*res, *zzn) != 1);
+        
+        char* result = to_string(res);
+        free_ZZ(zzn);
+        free_ZZ(res);
+        return result;
+    }
+
+    char* zz_random_smaller_than_n(const char* n) {
+        ZZ* zzn = from_string(n);
+        ZZ* res = new ZZ();
+        
+        do {
+            RandomBnd(*res, *zzn);
+        } while (IsZero(*res));
         
         char* result = to_string(res);
         free_ZZ(zzn);

@@ -1,6 +1,7 @@
 #include <NTL/ZZ_p.h>
 #include <sstream>
 #include <cstdlib>
+#include "ZZ_wrapper.h"
 
 using namespace NTL;
 
@@ -80,9 +81,10 @@ extern "C" {
         return zz_p_to_string(res);
     }
 
-    char* zz_p_pow(const char* base_str, long exponent) {
+    char* zz_p_pow(const char* base_str, const char* exponent_str) {
         ZZ_p* base = zz_p_from_string(base_str);
-        ZZ_p* result = new ZZ_p(power(*base, exponent));
+        ZZ* exponent = from_string(exponent_str);
+        ZZ_p* result = new ZZ_p(power(*base, *exponent));
         zz_p_free(base);
         return zz_p_to_string(result);
     }
