@@ -9,10 +9,10 @@ ffi.cdef("""
         char* zz_p_sub(const char* a, const char* b);
         char* zz_p_mul(const char* a, const char* b);
         char* zz_p_div(const char* a, const char* b);
-        char* zz_p_pow(const char* base_str, long exponent);
+        char* zz_p_pow(const char* base_str, const char* exponent_str);
         char* zz_p_neg(const char* a);
         char* zz_p_inv(const char* a);
-        int zz_p_eq(const char* a, const char* b)
+        int zz_p_eq(const char* a, const char* b);
 """)
 
 lib = ffi.dlopen("./libntl_wrappers.so")
