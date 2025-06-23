@@ -30,9 +30,7 @@ def Gen(n: str) -> str:
     """
     n = len(n)
     p = zz_random_prime(n, 100)
-    print("p:", p)
     q = zz_random_prime(n, 100)
-    print("q:", q)
     gcd = zz_gcd(zz_mul(p, q), zz_mul(zz_sub(p, "1"), zz_sub(q, "1"))) # good gcd
     while gcd != "1":
         p = zz_random_prime(n, 100)
