@@ -6,7 +6,7 @@ print("Public Key:", pk)
 print("Secret Key:", sk)
 
 m = "4287"  # Example message to encrypt
-ciphertext = Paillier.Enc(n, m, pk)  # Encrypt the message
+ciphertext = Paillier.Enc(m, pk)  # Encrypt the message
 print("Ciphertext:", ciphertext)
 
 decrypted_message = Paillier.Dec(pk, ciphertext, sk)  # Decrypt the message

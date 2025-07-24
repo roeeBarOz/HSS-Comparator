@@ -9,7 +9,6 @@ from NTL_interfaces.ZZ_interface import (
     zz_sub,
     zz_mul,
     zz_div,
-    zz_mod,
     zz_gcd,
     zz_random_prime,
     zz_lcm,
@@ -47,7 +46,7 @@ def Gen(n: str) -> str:
     sk = (l, mu) # good sk
     return (pk, sk)
 
-def Enc(n: str, m: str, pk: tuple) -> str:
+def Enc(m: str, pk: tuple) -> str:
     """
         Encrypt a message m using the public key pk.
         n: string representation of the modulus.
