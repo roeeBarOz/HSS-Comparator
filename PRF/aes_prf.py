@@ -43,13 +43,5 @@ def apply(key: bytes, message: bytes) -> bytes:
     :param message: The plaintext message to encrypt.
     :return: The encrypted ciphertext.
     """
-    return aesni_ctr_encrypt(key, nonce, message)
-
-# Test
-key = b'\x00' * 16
-message = b'Hello, AES-NI CTR mode! Works gsdfjhjsdkfsdfreat!asdjhagsdhgasd'
-
-encrypted = apply(key, message)
-
-print("Encrypted:", encrypted.hex())
-print(len(message), len(encrypted))
+    output = aesni_ctr_encrypt(key, nonce, message)
+    return output

@@ -146,6 +146,7 @@ extern "C" {
     char* zz_random(int bits) {
         ZZ* res = new ZZ(INIT_SIZE, bits);
         RandomBits(*res, bits);
+        SetBit(*res, bits - 1);
         return to_string(res);
     }
 
