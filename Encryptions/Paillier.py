@@ -65,7 +65,6 @@ def Enc(m: str, pk: tuple) -> str:
 def Dec(pk: tuple, c: str, sk: tuple) -> str:
     """
         Decrypt a ciphertext c using the secret key sk.
-        n: string representation of the modulus.
         c: string representation of the ciphertext to be decrypted.
         sk: secret key (l, mu).
         Returns the decrypted message as a string.

@@ -25,14 +25,9 @@ def Setup(n):
     N, g = pk_paillier
     state['N'] = N
     l, _ = sk
-    # step 0: setting kappa
     n = str(len(n))
     kappa = zz_div(zz_mul(n, "2"), "3") # as n refers to the length of p, q, and not the length of N=p*q.
     state['kappa'] = kappa
-    # step 1: generate pk_paillier and digits of sk_paillier, and set Bsk, Bmsg
-    # (with the specific case of the article "The Rise of Paillier")
-    
-    # set Bsk, Bmsg
     Bmsg = zz_pow("2", kappa)
     state['Bmsg'] = Bmsg
     Bsk = zz_div(N, zz_pow(Bmsg, "2"))
@@ -41,7 +36,6 @@ def Setup(n):
     while(l != "0"):
         d.append(zz_mod(l, Bsk))
         l = zz_div(l, Bsk)
-    # step 2: secret share the digits of sk
     random_range = zz_mul(zz_pow("2", kappa), Bsk)
     d_0 = []
     d_1 = []
@@ -49,14 +43,10 @@ def Setup(n):
         digit_1 = zz_random_smaller_than_n(random_range)
         d_1.append(digit_1)
         d_0.append(zz_sub(digit_1, digit))
-    # step 3: selecting k_prf to be kappa bits long
     k_prf = zz_random(128)
-    # step 4: create ek_0, ek_1
-    ek_0 = (k_prf, *d_0) # * flattens the array
+    ek_0 = (k_prf, *d_0)
     ek_1 = (k_prf, *d_1)
-    # step 5: encrypt the digits of sk
     D = []
-    print("pk_paillier:", len(pk_paillier))
     for digit in d:
         D.append(Paillier.Enc(digit, pk_paillier))
     pk = ((N, g), D)
@@ -66,6 +56,7 @@ def Input(pk, x):
     (N, g), D = pk
     X = Paillier.Enc(x, (N, g))
     I = []
+    I.append(X)
     for digit in D:
         pk_for_digit = (N, digit)
         I.append(Paillier.Enc(x, pk_for_digit))
@@ -76,12 +67,11 @@ def Load(b, pk, ek, I, id):
     kappa = state['kappa']
     secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), zz_mul(kappa, kappa)), b)
     memory_value_1 = (secret_share_1, *ek[1:])
-    print(1)
     return Mul(b, ek, I, memory_value_1, id)
 
-def Add(b, ek, i1, i2, id):
+def Add_Inputs(b, ek, i1, i2, id):
     N = state['N']
-    zz_p_init(zz_pow(N, 2))
+    zz_p_init(zz_pow(N, "2"))
     Z = []
     for j in range(len(i1)):
         i1_j = i1[j]
@@ -89,7 +79,7 @@ def Add(b, ek, i1, i2, id):
         Z.append(zz_p_mul(i1_j, i2_j))
     return Z
 
-def Add(b, ek, m1, m2, id):
+def Add_Memory_Values(b, ek, m1, m2, id):
     Z = []
     for j in range(len(m1)):
         m1_j = m1[j]
@@ -100,19 +90,12 @@ def Add(b, ek, m1, m2, id):
 def Mul(b, ek, i, m, id):
     N = state['N']
     Bsk = state['Bsk']
-    yd = "0"
-    digit_value = "1"
-    print(2)
-    for j in range(1, len(m)):
-        digit = m[j]
-        yd = zz_add(yd, zz_mul(digit_value, digit))
-        digit_value = zz_mul(digit_value, Bsk)
+    yd = calculate_yd(m[1:], Bsk)
     zd = []
-    print(3)
-    zz_p_init(zz_pow(N, "2"))
+    N_squared = zz_pow(N, "2")
     for j in range(len(i)):
+        zz_p_init(N_squared)
         zd.append(zz_mod(zz_add(DDLog(zz_p_pow(i[j], yd), N), str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), zz_add(id, str(j)).encode("utf-8")), 'big'))), N))
-    print(4)
     return zd
 
 def Output(b, ek, m, n_out, id):
@@ -124,3 +107,12 @@ def DDLog(g, N):
     h_tag = zz_div(zz_sub(g, h), N)
     return zz_p_mul(h_tag, zz_p_inv(h))
 
+
+
+def calculate_yd(m, Bsk):
+    yd = "0"
+    digit_value = "1"
+    for digit in m:
+        yd = zz_add(yd, zz_mul(digit_value, digit))
+        digit_value = zz_mul(digit_value, Bsk)
+    return yd
