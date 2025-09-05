@@ -14,64 +14,103 @@ from NTL_interfaces.ZZ_p_interface import (
     zz_p_init,
     zz_p_mul,
     zz_p_inv,
-    zz_p_pow
+    batch_zz_p_pow
 )
 import PRF.aes_prf as prf
+import multiprocessing as mp
 
 state = {}
 
 def Setup(n):
-    pk_paillier, sk = Paillier.Gen(n)
-    N, g = pk_paillier
+    N, sk = Paillier.Gen(n)
     state['N'] = N
-    l, _ = sk
+    state['N^2'] = zz_pow(N, "2")
     n = str(len(n))
-    kappa = zz_div(zz_mul(n, "2"), "3") # as n refers to the length of p, q, and not the length of N=p*q.
+    kappa = "80" # error happens with probabilty 2^-kappa
     state['kappa'] = kappa
     Bmsg = zz_pow("2", kappa)
+    state["2^kappa"] = Bmsg
     state['Bmsg'] = Bmsg
     Bsk = zz_div(N, zz_pow(Bmsg, "2"))
     state['Bsk'] = Bsk
     d = []
-    while(l != "0"):
-        d.append(zz_mod(l, Bsk))
-        l = zz_div(l, Bsk)
-    random_range = zz_mul(zz_pow("2", kappa), Bsk)
-    d_0 = []
-    d_1 = []
-    for digit in d:
-        digit_1 = zz_random_smaller_than_n(random_range)
-        d_1.append(digit_1)
-        d_0.append(zz_sub(digit_1, digit))
+    while(sk != "0"):
+        d.append(zz_mod(sk, Bsk))
+        sk = zz_div(sk, Bsk)
+    random_range = zz_mul(Bmsg, Bsk)
     k_prf = zz_random(128)
+    d_0, d_1, D = work_for_Setup(d, N, random_range)
     ek_0 = (k_prf, *d_0)
     ek_1 = (k_prf, *d_1)
-    D = []
-    for digit in d:
-        D.append(Paillier.Enc(digit, pk_paillier))
-    pk = ((N, g), D)
+    pk = (N, D)
     return (pk, ek_0, ek_1)
 
+def work_for_Setup(d, N, random_range):
+    queue = mp.Queue()
+    def worker(digit, N, queue, i):
+        digit1 = zz_random_smaller_than_n(random_range)
+        digit0 = zz_sub(digit1, digit)
+        result = Paillier.Enc(digit, N)
+        queue.put((digit0, digit1, result, i))
+    processes = []
+    i = 0
+    for digit in d:
+        p = mp.Process(target=worker, args=(digit, N, queue, i))
+        processes.append(p)
+        p.start()
+        i += 1
+    for p in processes:
+        p.join()
+    results = [None] * len(d)
+    d_0 = [None] * len(d)
+    d_1 = [None] * len(d)
+    while not queue.empty():
+        digit0, digit1, result, i = queue.get()
+        results[i] = result
+        d_0[i] = digit0
+        d_1[i] = digit1
+    return d_0, d_1, results
+
 def Input(pk, x):
-    (N, g), D = pk
-    X = Paillier.Enc(x, (N, g))
-    I = []
-    I.append(X)
-    for digit in D:
-        pk_for_digit = (N, digit)
-        I.append(Paillier.Enc(x, pk_for_digit))
+    N, D = pk
+    X = Paillier.Enc(x, N)
+    I = [X]
+    I.extend(encrypt_for_Input(x, N, D))
     return (I, I)
 
+def encrypt_for_Input(x, N, D):
+    queue = mp.Queue()
+    def worker(x, N, d, queue, i):
+        result = Paillier.Enc(x, N, d)
+        queue.put((result, i))
+    processes = []
+    i = 0
+    for d in D:
+        p = mp.Process(target=worker, args=(x, N, d, queue, i))
+        processes.append(p)
+        p.start()
+        i += 1
+    for p in processes:
+        p.join()
+    results = [None] * len(D)
+    while not queue.empty():
+        result, i = queue.get()
+        results[i] = result
+    return results
+
 def Load(b, pk, ek, I, id):
-    zz_p_init(pk[0][0])
-    kappa = state['kappa']
-    secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), zz_mul(kappa, kappa)), b)
-    memory_value_1 = (secret_share_1, *ek[1:])
-    return Mul(b, ek, I, memory_value_1, id)
+    memory_value_1 = load2(b, pk, ek, I, id)
+    mul_result = Mul(b, ek, I, memory_value_1, id)
+    return mul_result
+
+def load2(b, pk, ek, I, id):
+    zz_p_init(state['N'])
+    two_to_kappa = state['2^kappa']
+    secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), two_to_kappa), b)
+    return (secret_share_1, *ek[1:])
 
 def Add_Inputs(b, ek, i1, i2, id):
-    N = state['N']
-    zz_p_init(zz_pow(N, "2"))
+    zz_p_init(state['N^2'])
     Z = []
     for j in range(len(i1)):
         i1_j = i1[j]
@@ -88,26 +127,43 @@ def Add_Memory_Values(b, ek, m1, m2, id):
     return Z
 
 def Mul(b, ek, i, m, id):
-    N = state['N']
     Bsk = state['Bsk']
     yd = calculate_yd(m[1:], Bsk)
     zd = []
-    N_squared = zz_pow(N, "2")
-    for j in range(len(i)):
-        zz_p_init(N_squared)
-        zd.append(zz_mod(zz_add(DDLog(zz_p_pow(i[j], yd), N), str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), zz_add(id, str(j)).encode("utf-8")), 'big'))), N))
+    N = state['N']
+    N_squared = state['N^2']
+    powers = []
+    zz_p_init(N_squared)
+    powers = batch_zz_p_pow(i, yd)
+    zz_p_init(N)
+    zd = calc_for_Mul(powers, int(ek[0]).to_bytes(16, 'big'), N, id)
     return zd
+
+def calc_for_Mul(powers, prf_key, N, id):
+    queue = mp.Queue()
+    def worker(power, queue, i):
+        result = zz_mod(zz_add(DDLog(power, N), str(int.from_bytes(prf.apply(prf_key, zz_add(id, str(i)).encode("utf-8")), 'big'))), N)
+        queue.put((result, i))
+    processes = []
+    for i, power in enumerate(powers):
+        p = mp.Process(target=worker, args=(power, queue, i))
+        processes.append(p)
+        p.start()
+    for p in processes:
+        p.join()
+    results = [None] * len(powers)
+    while not queue.empty():
+        result, i = queue.get()
+        results[i] = result
+    return results
 
 def Output(b, ek, m, n_out, id):
     return zz_mod(m[0], n_out)
 
 def DDLog(g, N):
-    zz_p_init(N)
     h = zz_mod(g, N)
     h_tag = zz_div(zz_sub(g, h), N)
     return zz_p_mul(h_tag, zz_p_inv(h))
-
-
 
 def calculate_yd(m, Bsk):
     yd = "0"

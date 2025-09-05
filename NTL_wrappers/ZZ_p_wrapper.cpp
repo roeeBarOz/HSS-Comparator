@@ -2,7 +2,11 @@
 #include <sstream>
 #include <cstdlib>
 #include "ZZ_wrapper.h"
+#include <thread>
+#include <bits/stdc++.h>
+#include <vector>
 
+using namespace std;
 using namespace NTL;
 
 extern "C" {

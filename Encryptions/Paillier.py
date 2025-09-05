@@ -43,7 +43,7 @@ def Gen(n: str) -> str:
     sk = zz_mul(l, mu) # sk = (l, mu)
     return (n, sk)
 
-def Enc(m: str, pk: str) -> str:
+def Enc(m: str, pk: str, g: str = "not given") -> str:
     """
         Encrypt a message m using the public key pk.
         m: string representation of the message to be encrypted.
@@ -53,7 +53,11 @@ def Enc(m: str, pk: str) -> str:
     N_squared = zz_mul(pk, pk)
     r = zz_random_smaller_than_n(N_squared)
     zz_p_init(N_squared)
-    c1 = zz_p_add("1", zz_p_mul(m, pk))
+    c1 = ""
+    if g == "not given":
+        c1 = zz_p_add("1", zz_mul(pk, m))
+    else:
+        c1 = zz_p_pow(g, m)
     c2 = zz_p_pow(r, pk)
     c = zz_p_mul(c1, c2)
     return c

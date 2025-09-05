@@ -15,6 +15,9 @@ def measure(sizes, times, message):
         duration = timeit.timeit(lambda: hss.Input(pk, message), number=times)
         print(f"Average input time for size {size}: {duration / times:.6f} seconds")
 
+        I1, I2 = hss.Input(pk, message)
+        hss.Mul("0", ek_0, I1, I1, "1")  # warm up
+
         duration = timeit.timeit(lambda: hss.Load("0", pk, ek_0, I1, "1"), number=times)
         print(f"Average load time for size {size}: {duration / times:.6f} seconds")
 
