@@ -1,6 +1,4 @@
-import ctypes
 from ctypes import c_uint8, c_uint64, POINTER, cdll
-import os
 
 # Load the compiled shared library
 lib = cdll.LoadLibrary('./aesni_ctr.so')

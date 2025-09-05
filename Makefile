@@ -1,13 +1,13 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -O2 -fPIC -Wall -std=c++11
+CXXFLAGS = -O3 -fPIC -Wall -std=c++11 -march=native -mtune=native -flto -fopenmp
 
 # Directories
 SRC_DIR = NTL_wrappers
 BUILD_DIR = build
 
 # Libraries to link
-LIBS = -lntl -lgmp
+LIBS = -lntl -lgmp -fopenmp
 
 # Output shared library
 TARGET = libntl_wrappers.so
