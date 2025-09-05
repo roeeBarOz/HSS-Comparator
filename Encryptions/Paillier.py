@@ -2,7 +2,8 @@ from NTL_interfaces.ZZ_p_interface import (
     zz_p_mul,
     zz_p_pow,
     zz_p_inv,
-    zz_p_init
+    zz_p_init,
+    zz_p_add
 )
 from NTL_interfaces.ZZ_interface import (
     zz_add,
@@ -36,42 +37,35 @@ def Gen(n: str) -> str:
         q = zz_random_prime(n, 100)
         gcd = zz_gcd(zz_mul(p, q), zz_mul(zz_sub(p, "1"), zz_sub(q, "1")))
     n = zz_mul(p, q) # good n
-    l = zz_lcm(zz_sub(p, "1"), zz_sub(q, "1")) # good lcm
-    g = zz_add(n, "1") # g = n + 1, a common choice for g in Paillier, good g
+    l = zz_mul(zz_sub(p, "1"), zz_sub(q, "1")) # good lcm
     zz_p_init(n)
     mu = zz_p_inv(l) # mu = l^-1 mod n, good mu
-    pk = (n, g) # good pk
-    sk = (l, mu) # good sk
-    return (pk, sk)
+    sk = zz_mul(l, mu) # sk = (l, mu)
+    return (n, sk)
 
-def Enc(m: str, pk: tuple) -> str:
+def Enc(m: str, pk: str) -> str:
     """
         Encrypt a message m using the public key pk.
-        n: string representation of the modulus.
         m: string representation of the message to be encrypted.
-        pk: public key (n, g).
+        pk: public key.
         Returns the ciphertext as a string.
     """
-    n, g = pk
-    r = zz_random_smaller_than_n(n)
-    while zz_gcd(r, n) != "1":
-        r = zz_random_smaller_than_n(n)
-    zz_p_init(zz_mul(n, n))
-    c1 = zz_p_pow(g, m)
-    c2 = zz_p_pow(r, n)
+    N_squared = zz_mul(pk, pk)
+    r = zz_random_smaller_than_n(N_squared)
+    zz_p_init(N_squared)
+    c1 = zz_p_add("1", zz_p_mul(m, pk))
+    c2 = zz_p_pow(r, pk)
     c = zz_p_mul(c1, c2)
     return c
 
-def Dec(pk: tuple, c: str, sk: tuple) -> str:
+def Dec(pk: str, c: str, sk: str) -> str:
     """
         Decrypt a ciphertext c using the secret key sk.
         c: string representation of the ciphertext to be decrypted.
-        sk: secret key (l, mu).
+        sk: secret key.
+        pk: public key.
         Returns the decrypted message as a string.
     """
-    l, mu = sk
-    n, g = pk
-    zz_p_init(zz_mul(n, n))
-    c1 = zz_p_pow(c, l)
-    zz_p_init(n)
-    return zz_p_mul(mu, zz_div(zz_sub(c1, "1"), n))
+    zz_p_init(zz_mul(pk, pk))
+    c1 = zz_p_pow(c, sk)
+    return zz_div(zz_sub(c1, "1"), pk)
