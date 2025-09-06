@@ -28,10 +28,11 @@ def Setup(n):
     n = str(len(n))
     kappa = "80" # error happens with probabilty 2^-kappa
     state['kappa'] = kappa
-    Bmsg = zz_pow("2", kappa)
-    state["2^kappa"] = Bmsg
+    two_to_kappa = zz_pow("2", kappa)
+    Bsk = zz_div(sk, zz_pow("2", zz_add(n, zz_div(zz_mul(n, "127"), "128"))))
+    Bmsg = zz_div(Bsk, two_to_kappa)
+    state["2^kappa"] = two_to_kappa
     state['Bmsg'] = Bmsg
-    Bsk = zz_div(N, zz_pow(Bmsg, "2"))
     state['Bsk'] = Bsk
     d = []
     while(sk != "0"):
@@ -99,15 +100,11 @@ def encrypt_for_Input(x, N, D):
     return results
 
 def Load(b, pk, ek, I, id):
-    memory_value_1 = load2(b, pk, ek, I, id)
-    mul_result = Mul(b, ek, I, memory_value_1, id)
-    return mul_result
-
-def load2(b, pk, ek, I, id):
     zz_p_init(state['N'])
     two_to_kappa = state['2^kappa']
     secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), two_to_kappa), b)
-    return (secret_share_1, *ek[1:])
+    memory_value_1 = (secret_share_1, *ek[1:])
+    return Mul(b, ek, I, memory_value_1, id)
 
 def Add_Inputs(b, ek, i1, i2, id):
     zz_p_init(state['N^2'])
@@ -142,7 +139,7 @@ def Mul(b, ek, i, m, id):
 def calc_for_Mul(powers, prf_key, N, id):
     queue = mp.Queue()
     def worker(power, queue, i):
-        result = zz_mod(zz_add(DDLog(power, N), str(int.from_bytes(prf.apply(prf_key, zz_add(id, str(i)).encode("utf-8")), 'big'))), N)
+        result = zz_add(DDLog(power, N), str(int.from_bytes(prf.apply(prf_key, zz_add(id, str(i)).encode("utf-8")), 'big')))
         queue.put((result, i))
     processes = []
     for i, power in enumerate(powers):
