@@ -73,27 +73,6 @@ def zz_p_pow(base: str, exponent: str) -> str:
     result = ffi.string(result_c).decode()
     return result
 
-def batch_zz_p_pow(bases: list, exponent: str) -> list:
-    """Compute a batch of bases to the power of exponent."""
-    queue = mp.Queue()
-    def worker(base, exponent, queue, i):
-        result = zz_p_pow(base, exponent)
-        queue.put((result, i))
-    processes = []
-    i = 0
-    for base in bases:
-        p = mp.Process(target=worker, args=(base, exponent, queue, i))
-        processes.append(p)
-        p.start()
-        i += 1
-    for p in processes:
-        p.join()
-    results = [None] * len(bases)
-    while not queue.empty():
-        result, i = queue.get()
-        results[i] = result
-    return results
-
 def zz_p_neg(a: str) -> str:
     """Negate a ZZ_p number."""
     a_c = ffi.new("char[]", a.encode())

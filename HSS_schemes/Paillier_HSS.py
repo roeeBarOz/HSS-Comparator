@@ -14,10 +14,12 @@ from NTL_interfaces.ZZ_p_interface import (
     zz_p_init,
     zz_p_mul,
     zz_p_inv,
-    batch_zz_p_pow
+    zz_p_pow
 )
 import PRF.aes_prf as prf
 import multiprocessing as mp
+import os
+import psutil
 
 state = {}
 
@@ -40,64 +42,27 @@ def Setup(n):
         sk = zz_div(sk, Bsk)
     random_range = zz_mul(Bmsg, Bsk)
     k_prf = zz_random(128)
-    d_0, d_1, D = work_for_Setup(d, N, random_range)
+    D = []
+    d_0 = []
+    d_1 = []
+    for digit in d:
+        D.append(Paillier.Enc(digit, N))
+        digit1 = zz_random_smaller_than_n(random_range)
+        digit0 = zz_sub(digit1, digit)
+        d_0.append(digit0)
+        d_1.append(digit1)
     ek_0 = (k_prf, *d_0)
     ek_1 = (k_prf, *d_1)
     pk = (N, D)
     return (pk, ek_0, ek_1)
 
-def work_for_Setup(d, N, random_range):
-    queue = mp.Queue()
-    def worker(digit, N, queue, i):
-        digit1 = zz_random_smaller_than_n(random_range)
-        digit0 = zz_sub(digit1, digit)
-        result = Paillier.Enc(digit, N)
-        queue.put((digit0, digit1, result, i))
-    processes = []
-    i = 0
-    for digit in d:
-        p = mp.Process(target=worker, args=(digit, N, queue, i))
-        processes.append(p)
-        p.start()
-        i += 1
-    for p in processes:
-        p.join()
-    results = [None] * len(d)
-    d_0 = [None] * len(d)
-    d_1 = [None] * len(d)
-    while not queue.empty():
-        digit0, digit1, result, i = queue.get()
-        results[i] = result
-        d_0[i] = digit0
-        d_1[i] = digit1
-    return d_0, d_1, results
-
 def Input(pk, x):
     N, D = pk
     X = Paillier.Enc(x, N)
     I = [X]
-    I.extend(encrypt_for_Input(x, N, D))
+    for digit in D:
+        I.append(Paillier.Enc(x, N, digit))
     return (I, I)
-
-def encrypt_for_Input(x, N, D):
-    queue = mp.Queue()
-    def worker(x, N, d, queue, i):
-        result = Paillier.Enc(x, N, d)
-        queue.put((result, i))
-    processes = []
-    i = 0
-    for d in D:
-        p = mp.Process(target=worker, args=(x, N, d, queue, i))
-        processes.append(p)
-        p.start()
-        i += 1
-    for p in processes:
-        p.join()
-    results = [None] * len(D)
-    while not queue.empty():
-        result, i = queue.get()
-        results[i] = result
-    return results
 
 def Load(b, pk, ek, I, id):
     zz_p_init(state['N'])
@@ -131,28 +96,15 @@ def Mul(b, ek, i, m, id):
     N_squared = state['N^2']
     powers = []
     zz_p_init(N_squared)
-    powers = batch_zz_p_pow(i, yd)
+    for base in i:
+        powers.append(zz_p_pow(base, yd))
     zz_p_init(N)
-    zd = calc_for_Mul(powers, int(ek[0]).to_bytes(16, 'big'), N, id)
+    prf_key = int(ek[0]).to_bytes(16, 'big')
+    j = 0
+    for power in powers:
+        zd.append(zz_add(DDLog(power, N), str(int.from_bytes(prf.apply(prf_key, zz_add(id, str(j)).encode("utf-8")), 'big'))))
+        j += 1
     return zd
-
-def calc_for_Mul(powers, prf_key, N, id):
-    queue = mp.Queue()
-    def worker(power, queue, i):
-        result = zz_add(DDLog(power, N), str(int.from_bytes(prf.apply(prf_key, zz_add(id, str(i)).encode("utf-8")), 'big')))
-        queue.put((result, i))
-    processes = []
-    for i, power in enumerate(powers):
-        p = mp.Process(target=worker, args=(power, queue, i))
-        processes.append(p)
-        p.start()
-    for p in processes:
-        p.join()
-    results = [None] * len(powers)
-    while not queue.empty():
-        result, i = queue.get()
-        results[i] = result
-    return results
 
 def Output(b, ek, m, n_out, id):
     return zz_mod(m[0], n_out)
