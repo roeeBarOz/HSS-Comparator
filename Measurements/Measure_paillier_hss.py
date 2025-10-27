@@ -18,8 +18,8 @@ def measure(sizes, times, message):
         I1, I2 = hss.Input(pk, message)
         hss.Mul("0", ek_0, I1, I1, "1")  # warm up
 
-        duration = timeit.timeit(lambda: hss.Load("0", pk, ek_0, I1, "1"), number=times)
-        print(f"Average load time for size {size}: {duration / times:.6f} seconds")
+        # duration = timeit.timeit(lambda: hss.Load("0", pk, ek_0, I1, "1"), number=times)
+        # print(f"Average load time for size {size}: {duration / times:.6f} seconds")
 
         duration = timeit.timeit(lambda: hss.Add_Inputs("0", ek_0, I1, I2, "3"), number=times)
         print(f"Average input addition time for size {size}: {duration / times:.6f} seconds")
@@ -31,4 +31,8 @@ def measure(sizes, times, message):
 
         duration = timeit.timeit(lambda: hss.Mul("0", ek_0, I1, m1, "3"), number=times)
         print(f"Average multiplication time for size {size}: {duration / times:.6f} seconds")
+        
+        # yd = hss.calculate_yd(m1[1:])
+        # duration = timeit.timeit(lambda: hss.calc_powers(I1, yd), number=times)
+        # print(f"Average power calculation time for size {size}: {duration / times:.6f} seconds")
         print("-" * 100)

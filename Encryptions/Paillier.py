@@ -6,13 +6,11 @@ from NTL_interfaces.ZZ_p_interface import (
     zz_p_add
 )
 from NTL_interfaces.ZZ_interface import (
-    zz_add,
     zz_sub,
     zz_mul,
     zz_div,
     zz_gcd,
     zz_random_prime,
-    zz_lcm,
     zz_random_smaller_than_n
 )
 

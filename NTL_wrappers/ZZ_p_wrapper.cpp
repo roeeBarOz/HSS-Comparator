@@ -90,6 +90,7 @@ extern "C" {
         ZZ* exponent = from_string(exponent_str);
         ZZ_p* result = new ZZ_p(power(*base, *exponent));
         zz_p_free(base);
+        delete exponent;
         return zz_p_to_string(result);
     }
 

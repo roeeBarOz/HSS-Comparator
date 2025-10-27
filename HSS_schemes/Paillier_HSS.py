@@ -17,9 +17,6 @@ from NTL_interfaces.ZZ_p_interface import (
     zz_p_pow
 )
 import PRF.aes_prf as prf
-import multiprocessing as mp
-import os
-import psutil
 
 state = {}
 
@@ -59,7 +56,8 @@ def Setup(n):
 def Input(pk, x):
     N, D = pk
     X = Paillier.Enc(x, N)
-    I = [X]
+    #I = [X]
+    I = []
     for digit in D:
         I.append(Paillier.Enc(x, N, digit))
     return (I, I)
@@ -67,8 +65,9 @@ def Input(pk, x):
 def Load(b, pk, ek, I, id):
     zz_p_init(state['N'])
     two_to_kappa = state['2^kappa']
-    secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), two_to_kappa), b)
-    memory_value_1 = (secret_share_1, *ek[1:])
+    # secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), two_to_kappa), b)
+    # memory_value_1 = (secret_share_1, *ek[1:])
+    memory_value_1 = ek[1:]
     return Mul(b, ek, I, memory_value_1, id)
 
 def Add_Inputs(b, ek, i1, i2, id):
@@ -89,15 +88,11 @@ def Add_Memory_Values(b, ek, m1, m2, id):
     return Z
 
 def Mul(b, ek, i, m, id):
-    Bsk = state['Bsk']
-    yd = calculate_yd(m[1:], Bsk)
+    # yd = calculate_yd(m[1:])
+    yd = calculate_yd(m)
     zd = []
     N = state['N']
-    N_squared = state['N^2']
-    powers = []
-    zz_p_init(N_squared)
-    for base in i:
-        powers.append(zz_p_pow(base, yd))
+    powers = calc_powers(i, yd)
     zz_p_init(N)
     prf_key = int(ek[0]).to_bytes(16, 'big')
     j = 0
@@ -105,6 +100,10 @@ def Mul(b, ek, i, m, id):
         zd.append(zz_add(DDLog(power, N), str(int.from_bytes(prf.apply(prf_key, zz_add(id, str(j)).encode("utf-8")), 'big'))))
         j += 1
     return zd
+
+def calc_powers(bases, exponent):
+    zz_p_init(state['N^2'])
+    return [zz_p_pow(base, exponent) for base in bases]
 
 def Output(b, ek, m, n_out, id):
     return zz_mod(m[0], n_out)
@@ -114,7 +113,8 @@ def DDLog(g, N):
     h_tag = zz_div(zz_sub(g, h), N)
     return zz_p_mul(h_tag, zz_p_inv(h))
 
-def calculate_yd(m, Bsk):
+def calculate_yd(m):
+    Bsk = state['Bsk']
     yd = "0"
     digit_value = "1"
     for digit in m:
