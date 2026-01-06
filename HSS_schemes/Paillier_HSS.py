@@ -63,8 +63,8 @@ def Input(pk, x):
     return (I, I)
 
 def Load(b, pk, ek, I, id):
-    zz_p_init(state['N'])
-    two_to_kappa = state['2^kappa']
+    # zz_p_init(state['N'])
+    # two_to_kappa = state['2^kappa']
     # secret_share_1 = zz_p_add(zz_mod(str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), b'1'), 'big')), two_to_kappa), b)
     # memory_value_1 = (secret_share_1, *ek[1:])
     memory_value_1 = ek[1:]
