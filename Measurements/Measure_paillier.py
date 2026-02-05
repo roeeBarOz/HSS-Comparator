@@ -9,18 +9,19 @@ def measure(sizes, times, message):
     for size in sizes:
         n = "1" * size
         start = time.time()
-        for i in range(times):
-            pk, sk = Paillier.Gen(n)
+        for _ in range(times):
+            Paillier.Gen(n)
         end = time.time()
         print(f"Average key generation time for size {size}: {(end - start) / times:.6f} seconds")
         pk, sk = Paillier.Gen(n)
         start = time.time()
-        for i in range(times):
-            c = Paillier.Enc(n, message, pk)
+        for _ in range(times):
+            Paillier.Enc(message, pk)
         end = time.time()
+        c = Paillier.Enc(message, pk)
         print(f"Average encryption time for size {size}: {(end - start) / times:.6f} seconds")
         start = time.time()
-        for i in range(times):
-            decrypted = Paillier.Dec(pk, c, sk)
+        for _ in range(times):
+            Paillier.Dec(pk, c, sk)
         end = time.time()
         print(f"Average decryption time for size {size}: {(end - start) / times:.6f} seconds")
