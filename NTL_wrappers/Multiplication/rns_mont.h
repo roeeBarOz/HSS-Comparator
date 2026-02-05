@@ -133,8 +133,6 @@ __m256i single_reduce(
     __m256i mod_inv_vec
 );
 
-__m256i montReduce(__m256i prod_64bit, __m256i m, __m256i m_inv_32);
-
 /**
  * @brief Runs the full CRNS conversion (Algorithm 6).
  * @param out_vec       Vector to write the 32-bit results to.
@@ -148,12 +146,6 @@ void run_crns(
     const std::vector<__m256i>& in_vec,
     RnsContext* ctx,
     bool m_to_n
-);
-
-__m256i wideMontReduce(
-    __m256i acc_hi, __m256i acc_lo, 
-    __m256i m,
-    __m256i z, __m256i inv_32
 );
 
 void crns_accumulate(

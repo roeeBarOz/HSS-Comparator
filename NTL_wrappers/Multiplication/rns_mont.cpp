@@ -34,45 +34,6 @@ static inline __m256i unsigned_gt(__m256i a, __m256i b) {
     return _mm256_cmpgt_epi64(ax, bx);
 }
 
-// Helper function to print a __m256i vector (as 64-bit integers)
-void print_vec_epi64(__m256i vec) {
-    // 1. Create a C-style array on the stack to hold the data
-    uint64_t my_array[4];
-
-    // 2. Copy the data from the vector into the array
-    _mm256_storeu_si256((__m256i*)my_array, vec);
-
-    // 3. Print the array contents
-    std::cout << "[ "
-              << my_array[0] << ", "
-              << my_array[1] << ", "
-              << my_array[2] << ", "
-              << my_array[3] << " ]" << std::endl;
-}
-
-void print_m256i_vec(const std::vector<__m256i>& vec, const std::string& label) {
-    std::cout << label << ": ";
-    printf("[");
-    for (size_t i = 0; i < vec.size(); ++i) {
-        alignas(32) uint64_t vals[4];
-        _mm256_storeu_si256((__m256i*)vals, vec[i]);
-        std::cout << vals[0] << ", "
-                  << vals[1] << ", "
-                  << vals[2] << ", "
-                  << vals[3] << ",";
-    }
-    printf("]\n");
-}
-
-void print_uint64_vec(const std::vector<uint64_t>& vec, const std::string& label) {
-    std::cout << label << ": ";
-    printf("[");
-    for (size_t i = 0; i < vec.size(); ++i) {
-        std::cout << vec[i] << ", ";
-    }
-    printf("]\n");
-}
-
 uint32_t inverse(uint32_t R, uint32_t m) {
     mpz_t mpzR, mpzm, mpzR_inv;
     mpz_init_set_ui(mpzR, R);
@@ -412,16 +373,6 @@ RnsNumber::RnsNumber(int num_vecs) {
     vec_n.resize(0, _mm256_setzero_si256());
 }
 
-void print_mpz_vec(const std::vector<mpz_ptr>& vec, const std::string& label) {
-    std::cout << label << ": ";
-    printf("[");
-    for (size_t i = 0; i < vec.size(); ++i) {
-        char* str = mpz_get_str(nullptr, 10, vec[i]);
-        std::cout << str << ", ";
-        free(str);
-    }
-    printf("]\n");
-}
 // --- CONVERSION STUBS ---
 
 RnsNumber* stringToRns(const std::string& num_str, RnsContext* ctx) {
@@ -602,30 +553,6 @@ void rnsPowerMod(RnsNumber* r, const RnsNumber* a, const mpz_t e, RnsContext* ct
     }
 }
 
-std::string little_check(const std::vector<__m256i>& vec, RnsContext* ctx) {
-    std::string result = "";
-    // build vec back to a number
-    mpz_t num;
-    mpz_init_set_ui(num, 0);
-    mpz_t term;
-    mpz_init(term);
-    // Extract all 't' 32-bit scalar residues from the vector
-    alignas(32) uint64_t x_scalars[ctx->num_vecs * LANE_COUNT];
-    for (int j = 0; j < ctx->num_vecs; ++j) {
-        _mm256_storeu_si256((__m256i*)(x_scalars + j * LANE_COUNT), vec[j]);
-    }
-    // Apply ICRT: S = \sum_{i=0}^{t-1} (r_i * I_i)
-    for (int i = 0; i < ctx->t; ++i) {
-        uint64_t r_i = x_scalars[i];
-        mpz_mul_ui(term, ctx->icrt_m_constants[i], r_i);
-        mpz_add(num, num, term);
-    }
-    mpz_get_str(result.data(), 10, num);
-    mpz_clear(num);
-    mpz_clear(term);
-    return result;
-}
-
 void rnsOptMontMul(RnsNumber* r, const RnsNumber* a, const RnsNumber* b, RnsContext* ctx) {
     int num_vecs = ctx->num_vecs;
     std::vector<__m256i> s_m_before_reduction(num_vecs, _mm256_setzero_si256());
@@ -774,32 +701,6 @@ __m256i add_single_s_and_qp(
     return q;
 }
 
-// Standard 32-bit Montgomery reduction: T -> T * R^{-1} mod m, with R = 2^32.
-__m256i montReduce(__m256i prod_64bit, __m256i m, __m256i m_nprime) {
-    const __m256i mask32 = _mm256_set1_epi64x(0xFFFFFFFFu);
-    __m256i q = _mm256_mul_epu32(prod_64bit, m_nprime);
-    q = _mm256_and_si256(q, mask32);
-    __m256i qm = _mm256_mul_epu32(q, m);
-    __m256i u = _mm256_srli_epi64(qm, 32);
-    __m256i u2 = _mm256_srli_epi64(prod_64bit, 32);
-    u = _mm256_sub_epi64(u2, u); 
-    __m256i ge_mask = _mm256_cmpgt_epi64(_mm256_set1_epi64x(0), u); // u < 0
-    ge_mask = _mm256_and_si256(ge_mask, m);
-    u = _mm256_add_epi64(u, ge_mask);
-    return u; // 0 <= u < m
-}
-
-void print_u128(__uint128_t n) {
-    if (n == 0) return;
-    std::string s = "";
-    while (n > 0) {
-        s += (n % 10) + '0';
-        n /= 10;
-    }
-    std::reverse(s.begin(), s.end());
-    std::cout << "u128: " << s << std::endl;
-}
-
 /**
  * @brief Runs the full CRNS conversion (Algorithm 6).
  * Handles domain crossing: Mont -> Std -> Mont
@@ -925,22 +826,4 @@ void crns_correct(
     // Add the high part + carries
     acc_hi = _mm256_add_epi64(acc_hi, prod_hi_shifted_hi);
     acc_hi = _mm256_add_epi64(acc_hi, carry2_vec);
-}
-
-__m256i wideMontReduce(
-    __m256i acc_hi, __m256i acc_lo,
-    __m256i m,
-    __m256i z, __m256i inv_32
-) {
-    const __m256i mask32 = _mm256_set1_epi64x(MASK_32);
-    __m256i lo = _mm256_and_si256(acc_lo, mask32);
-    __m256i hi = _mm256_srli_epi64(acc_lo, 32);
-    __m256i u  = _mm256_and_si256(acc_hi, mask32);
-    u = _mm256_mul_epu32(u, z);
-    u = _mm256_mul_epu32(u, z);
-    hi = _mm256_mul_epu32(hi, z);
-    __m256i sum = _mm256_add_epi64(hi, u);
-    sum = _mm256_add_epi64(sum, lo);
-    sum = montReduce(sum, m, inv_32);
-    return sum;
 }
