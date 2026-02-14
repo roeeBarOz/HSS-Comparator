@@ -12,6 +12,10 @@ ffi.cdef("""
     char* vec_zz_p_inner_product(const char* a_str, const char* b_str);
     char* vec_zz_p_random(long length);
     char* vec_zz_p_get(const char* vec_str, long index);
+    char* vec_zz_p_gaussian(long length, long k);
+    char* vec_zz_p_prepend_one(const char* vec_str);
+    char* vec_zz_p_create_e1(const char* val_str, long length);
+    char* vec_zz_p_random_binary(long length);
 
     // Matrix
     char* mat_zz_p_add(const char* A_str, const char* B_str);
@@ -24,6 +28,8 @@ ffi.cdef("""
     char* mat_zz_p_determinant(const char* A_str);
     char* mat_zz_p_random(long rows, long cols);
     char* mat_zz_p_get_row(const char* matrix_str, long row_idx);
+    char* mat_zz_p_negate(const char* matrix_str);
+    char* mat_zz_p_concat_col_first(const char* col_vec_str, const char* matrix_str);
 """)
 
 # Load the library (ensure you compile all cpp files into this .so)
@@ -61,6 +67,40 @@ def vec_random(length: int) -> str:
 def vec_get(vec_str: str, index: int) -> str:
     return _wrap_op(lib.vec_zz_p_get, vec_str, index)
 
+def vec_gaussian(length: int, k: int = 2) -> str:
+    """
+    Generates an error vector using Centered Binomial Distribution.
+    
+    Args:
+        length: Size of the vector.
+        k: Distribution width (default 2). 
+           Higher k = higher standard deviation = more noise.
+    """
+    res_c = lib.vec_zz_p_gaussian(length, k)
+    res_str = ffi.string(res_c).decode()
+    lib.free_vec_mat_string(res_c)
+    return res_str
+
+def vec_prepend_one(vec_str: str) -> str:
+    """Creates (1, v) from v."""
+    return _wrap_op(lib.vec_zz_p_prepend_one, vec_str)
+
+def vec_create_e1(val_str: str, length: int) -> str:
+    """
+    Creates a vector of 'length' where index 0 is 'val' and the rest are 0.
+    Result: [val, 0, 0, ..., 0]
+    """
+    return _wrap_op(lib.vec_zz_p_create_e1, val_str, length)
+
+def vec_random_binary(length: int) -> str:
+    """
+    Generates a random vector with elements in {0, 1}.
+    """
+    res_c = lib.vec_zz_p_random_binary(length)
+    res_str = ffi.string(res_c).decode()
+    lib.free_vec_mat_string(res_c)
+    return res_str
+
 def mat_add(A_str: str, B_str: str) -> str:
     return _wrap_op(lib.mat_zz_p_add, A_str, B_str)
 
@@ -93,3 +133,14 @@ def mat_random(rows: int, cols: int) -> str:
 
 def mat_get_row(matrix_str: str, row_idx: int) -> str:
     return _wrap_op(lib.mat_zz_p_get_row, matrix_str, row_idx)
+
+def mat_neg(matrix_str: str) -> str:
+    """Computes -A."""
+    return _wrap_op(lib.mat_zz_p_negate, matrix_str)
+
+def mat_concat_col_first(col_vec_str: str, matrix_str: str) -> str:
+    """
+    Concatenates vector b to the LEFT of matrix A.
+    Result = [b | A]
+    """
+    return _wrap_op(lib.mat_zz_p_concat_col_first, col_vec_str, matrix_str)
