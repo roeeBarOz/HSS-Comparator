@@ -85,12 +85,12 @@ def vec_prepend_one(vec_str: str) -> str:
     """Creates (1, v) from v."""
     return _wrap_op(lib.vec_zz_p_prepend_one, vec_str)
 
-def vec_create_e1(val_str: str, length: int) -> str:
+def vec_create_e(val_str: str, length: int, k: int) -> str:
     """
-    Creates a vector of 'length' where index 0 is 'val' and the rest are 0.
-    Result: [val, 0, 0, ..., 0]
+    Creates a vector of 'length' where index k is 'val' and the rest are 0.
+    Result: [0, ..., val, ..., 0] where val is at index k.
     """
-    return _wrap_op(lib.vec_zz_p_create_e1, val_str, length)
+    return _wrap_op(lib.vec_zz_p_create_e, val_str, length, k)
 
 def vec_random_binary(length: int) -> str:
     """

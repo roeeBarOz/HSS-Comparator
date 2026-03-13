@@ -129,15 +129,15 @@ extern "C" {
 
     // --- Vector: Create Scaled Basis Vector (val, 0, ..., 0) ---
     // Useful for constructing the message vector m = (m, 0, ..., 0)
-    char* vec_zz_p_create_e1(const char* val_str, long length) {
+    char* vec_zz_p_create_e(const char* val_str, long length, long k) {
         vec_ZZ_p v;
         v.SetLength(length); // NTL automatically initializes to zero
         
         ZZ_p val;
         from_cstring(val, val_str);
         
-        if (length > 0) {
-            v[0] = val;
+        if (length > k && k >= 0) {
+            v[k] = val;
         }
         
         return to_cstring(v);

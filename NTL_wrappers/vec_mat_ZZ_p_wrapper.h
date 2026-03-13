@@ -16,7 +16,7 @@ extern "C" {
     char* vec_zz_p_get(const char* vec_str, long index);
     char* vec_zz_p_gaussian(long length, long k);
     char* vec_zz_p_prepend_one(const char* vec_str);
-    char* vec_zz_p_create_e1(const char* val_str, long length);
+    char* vec_zz_p_create_e(const char* val_str, long length, long k);
     char* vec_zz_p_random_binary(long length);
     
     // --- Matrix Operations (mat_ZZ_p) ---

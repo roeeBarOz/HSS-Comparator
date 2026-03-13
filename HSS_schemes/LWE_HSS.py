@@ -1,6 +1,21 @@
+import Encryptions.LWE as LWE
+from NTL_interfaces.vec_mat_ZZ_p_interface import (
+    vec_random,
+    vec_sub
+)
+from NTL_interfaces.ZZ_interface import (
+    zz_random
+)
 
 def Setup(n):
-    pass
+    (pk, sk) = LWE.Gen(n, "0", "0") # need to be modified
+    n = len(n)
+    s_0 = vec_random(n)
+    s_1 = vec_sub(sk, s_0)
+    k_prf = zz_random(128)
+    ek_0 = (k_prf, s_0)
+    ek_1 = (k_prf, s_1)
+    return (pk, ek_0, ek_1)
 
 def Input(pk, x):
     pass
