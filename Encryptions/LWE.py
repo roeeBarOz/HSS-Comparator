@@ -1,4 +1,4 @@
-from NTL_interfaces.vec_mat_ZZ_p_interface import (
+from NTL_interfaces.vec_mat_ZZ_interface import (
     mat_random,
     vec_create_e,
     vec_gaussian,
@@ -64,45 +64,6 @@ def Enc(m: str, pk: str) -> str:
     zz_p_init(q)
     c = vec_add(mat_mul_vec(mat_transpose(pk), r), vec_mul_scalar(m, q_divided_by_p))
     return c
-
-def Okdm(m: str, j: int, zero_encrypted: str, p_times_m: str) -> str:
-    """
-        Generate an OKDM ciphertext for a message m using the public key pk.
-        m: string representation of the message to be encrypted.
-        pk: public key.
-        Returns the OKDM ciphertext as a string.
-    """
-    p = state['p']
-    e_j = vec_create_e(p_times_m, state['n']+1, j) 
-    c_j = vec_add(zero_encrypted, e_j)
-    return c_j
-
-def OKDM(m: str, pk: str, s: str) -> str:
-    """
-        Generate an OKDM ciphertext for a message m using the public key pk.
-        m: string representation of the message to be encrypted.
-        pk: public key.
-        Returns the OKDM ciphertext as a string.
-    """
-    C = ""
-    p = state['p']
-    p_times_m = zz_p_mul(p, m)
-    zero_encrypted = Enc("0", pk)
-    for j in range(state['n'], -1, -1): 
-        c_j = Okdm(m, j, zero_encrypted, p_times_m)
-        C = mat_concat_col_first(c_j, C)
-    return C
-
-def DDec(c: str, t: str) -> str:
-    """
-        Decrypt a ciphertext c using the secret key sk.
-        c: string representation of the ciphertext to be decrypted.
-        sk: secret key.
-        Returns the decrypted message as a string.
-    """
-    # Placeholder implementation
-    decrypted_message = "decrypted_message_placeholder"
-    return decrypted_message
 
 def sample_matrix(m: str, n: str, q: str) -> str:
     """
