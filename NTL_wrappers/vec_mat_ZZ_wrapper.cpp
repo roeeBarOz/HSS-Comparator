@@ -6,6 +6,8 @@
 #include <cstring>
 #include <cstdlib>
 #include "vec_mat_ZZ_wrapper.h"
+#include <chrono>
+#include <vector>
 
 using namespace NTL;
 using namespace std;
@@ -26,18 +28,21 @@ void from_cstring(T& obj, const char* str) {
     ss >> obj;
 }
 
+// Helper: Get modulus byte length
+int get_modulus_byte_length() {
+    ZZ mod = ZZ_p::modulus();
+    return NumBytes(mod);
+}
+
 extern "C" {
 
-    void free_vec_mat_string(char* str) {
-        free(str);
+    void free_vec_mat_string(unsigned char* str) {
+        delete[] str;
     }
 
     // Universal Centered Modulo: Forces 'x' into the centered ring of 'modulus'
-    ZZ centered_mod(const ZZ& x, const ZZ& modulus) {
-        // NTL's % operator strictly returns a positive value in [0, modulus-1]
+    ZZ centered_mod_ZZ(const ZZ& x, const ZZ& modulus) {
         ZZ res = x % modulus; 
-        
-        // Shift to the negative half if necessary
         if (res > modulus / 2) {
             res -= modulus;
         }
@@ -46,60 +51,71 @@ extern "C" {
 
     // ================== Vector Operations ==================
 
-    char* vec_zz_add(const char* a_str, const char* b_str) {
+    unsigned char* vec_zz_add(const unsigned char* a_buf, const unsigned char* b_buf, long length) {
         vec_ZZ a, b;
-        from_cstring(a, a_str);
-        from_cstring(b, b_str);
-        return to_cstring(a + b);
+        export_bytes_to_zz_vector(a_buf, length, a);
+        export_bytes_to_zz_vector(b_buf, length, b);
+        vec_ZZ result = a + b;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* vec_zz_sub(const char* a_str, const char* b_str) {
+    unsigned char* vec_zz_sub(const unsigned char* a_buf, const unsigned char* b_buf, long length) {
         vec_ZZ a, b;
-        from_cstring(a, a_str);
-        from_cstring(b, b_str);
-        return to_cstring(a - b);
+        export_bytes_to_zz_vector(a_buf, length, a);
+        export_bytes_to_zz_vector(b_buf, length, b);
+        vec_ZZ result = a - b;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* vec_zz_mul_scalar(const char* vec_str, const char* scalar_str) {
+    unsigned char* vec_zz_mul_scalar(const unsigned char* vec_buf, long length, const char* scalar_str) {
         vec_ZZ v;
         ZZ s;
-        from_cstring(v, vec_str);
+        export_bytes_to_zz_vector(vec_buf, length, v);
         from_cstring(s, scalar_str);
-        return to_cstring(v * s);
+        vec_ZZ result = v * s;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* vec_zz_inner_product(const char* a_str, const char* b_str) {
+    unsigned char* vec_zz_inner_product(const unsigned char* a_buf, const unsigned char* b_buf, long length) {
         vec_ZZ a, b;
         ZZ res;
-        from_cstring(a, a_str);
-        from_cstring(b, b_str);
+        export_bytes_to_zz_vector(a_buf, length, a);
+        export_bytes_to_zz_vector(b_buf, length, b);
         InnerProduct(res, a, b);
-        return to_cstring(res);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[item_size];
+        NTL::BytesFromZZ(buffer, res, item_size);
+        return buffer;
     }
 
-    char* vec_zz_p_random(long length) {
-        vec_ZZ_p v;
-        v.SetLength(length);
-        for(long i = 0; i < length; i++) random(v[i]);
-        return to_cstring(v);
+    unsigned char* vec_zz_p_random(long length) {
+        vec_ZZ_p v = random_vec_ZZ_p(length);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_p_vector_to_bytes(v, buffer);
+        return buffer;
     }
 
-    char* vec_zz_get(const char* vec_str, long index) {
+    unsigned char* vec_zz_get(const unsigned char* vec_buf, long length, long index) {
         vec_ZZ v;
-        from_cstring(v, vec_str);
-        // Check bounds ideally, but NTL throws if out of bounds
-        // Note: NTL vectors are 0-indexed
-        return to_cstring(v[index]);
+        export_bytes_to_zz_vector(vec_buf, length, v);
+        ZZ val = v[index];
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[item_size];
+        NTL::BytesFromZZ(buffer, val, item_size);
+        return buffer;
     }
 
-    /**
-     * Samples a vector from a Centered Binomial Distribution (CBD).
-     * This is a fast, constant-time approximation of a Discrete Gaussian.
-     * * @param length: Length of the vector (e.g., n or M)
-     * @param k: The "width" parameter. 
-     * k=2 (range -2..2) or k=3 (range -3..3) are standard for LWE.
-     */
-    char* vec_zz_gaussian(long length, long k) {
+    unsigned char* vec_zz_gaussian(long length, long k) {
         vec_ZZ v;
         v.SetLength(length);
 
@@ -107,45 +123,42 @@ extern "C" {
             long a = 0;
             long b = 0;
 
-            // Simulate 2k coin flips
             for (long j = 0; j < k; j++) {
-                // RandomBnd(2) returns 0 or 1 with 50% probability
                 a += RandomBnd(2);
                 b += RandomBnd(2);
             }
 
-            // Result is in range [-k, k] and centered at 0
             long val = a - b; 
-
-            // Convert to ZZ (handles negative wrapping automatically)
             v[i] = conv<ZZ>(val);
         }
 
-        return to_cstring(v);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(v, buffer);
+        return buffer;
     }
 
-    // --- Vector: Prepend 1 ---
-    // Used to create s' = (1, s)
-    char* vec_zz_prepend_one(const char* vec_str) {
+    unsigned char* vec_zz_prepend_one(const unsigned char* vec_buf, long length) {
         vec_ZZ v;
-        from_cstring(v, vec_str);
+        export_bytes_to_zz_vector(vec_buf, length, v);
         
         vec_ZZ res;
-        res.SetLength(v.length() + 1);
+        res.SetLength(length + 1);
         
-        res[0] = 1; // Set first element to 1
-        for(long i = 0; i < v.length(); i++) {
+        res[0] = 1;
+        for(long i = 0; i < length; i++) {
             res[i+1] = v[i];
         }
         
-        return to_cstring(res);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[(length + 1) * item_size];
+        export_zz_vector_to_bytes(res, buffer);
+        return buffer;
     }
 
-    // --- Vector: Create Scaled Basis Vector (val, 0, ..., 0) ---
-    // Useful for constructing the message vector m = (m, 0, ..., 0)
-    char* vec_zz_create_e(const char* val_str, long length, long k) {
+    unsigned char* vec_zz_create_e(const char* val_str, long length, long k) {
         vec_ZZ v;
-        v.SetLength(length); // NTL automatically initializes to zero
+        v.SetLength(length);
         
         ZZ val;
         from_cstring(val, val_str);
@@ -154,163 +167,184 @@ extern "C" {
             v[k] = val;
         }
         
-        return to_cstring(v);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(v, buffer);
+        return buffer;
     }
 
-    // --- Vector: Sample Binary Vector ---
-    // Samples a vector with elements uniformly from {0, 1}
-    // Used for the randomness 'r' in LWE encryption
-    char* vec_zz_random_binary(long length) {
+    unsigned char* vec_zz_random_binary(long length) {
         vec_ZZ v;
         v.SetLength(length);
         
         for(long i = 0; i < length; i++) {
-            // RandomBnd(2) returns 0 or 1
             v[i] = conv<ZZ>(RandomBnd(2));
         }
         
-        return to_cstring(v);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(v, buffer);
+        return buffer;
     }
 
-    // Vector Centered Modulo
-    vec_ZZ centered_mod(const vec_ZZ& vec, const ZZ& modulus) {
+    vec_ZZ centered_mod_ZZ_vec(const vec_ZZ& vec, const ZZ& modulus) {
         long n = vec.length();
         vec_ZZ result;
         result.SetLength(n);
         for (long i = 0; i < n; ++i) {
-            result[i] = centered_mod(vec[i], modulus);
+            result[i] = centered_mod_ZZ(vec[i], modulus);
         }
         return result;
     }
 
-    char* vec_add_scalar(const char* vec_str, const char* scalar_str) {
+    unsigned char* vec_add_scalar(const unsigned char* vec_buf, long length, const char* scalar_str) {
         vec_ZZ v;
         ZZ s;
-        from_cstring(v, vec_str);
+        export_bytes_to_zz_vector(vec_buf, length, v);
         from_cstring(s, scalar_str);
 
         vec_ZZ res = v;
-        long n = v.length();
-        for (long i = 0; i < n; ++i) {
+        for (long i = 0; i < length; ++i) {
             res[i] += s;
         }
 
-        return to_cstring(res);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(res, buffer);
+        return buffer;
     }
 
     // ================== Matrix Operations ==================
 
-    char* mat_zz_add(const char* A_str, const char* B_str) {
+    unsigned char* mat_zz_add(const unsigned char* A_buf, const unsigned char* B_buf, long size) {
         mat_ZZ A, B;
-        from_cstring(A, A_str);
-        from_cstring(B, B_str);
-        return to_cstring(A + B);
+        export_bytes_to_zz_matrix(A_buf, size, A);
+        export_bytes_to_zz_matrix(B_buf, size, B);
+        mat_ZZ result = A + B;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* mat_zz_sub(const char* A_str, const char* B_str) {
+    unsigned char* mat_zz_sub(const unsigned char* A_buf, const unsigned char* B_buf, long size) {
         mat_ZZ A, B;
-        from_cstring(A, A_str);
-        from_cstring(B, B_str);
-        return to_cstring(A - B);
+        export_bytes_to_zz_matrix(A_buf, size, A);
+        export_bytes_to_zz_matrix(B_buf, size, B);
+        mat_ZZ result = A - B;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* mat_zz_mul(const char* A_str, const char* B_str) {
+    unsigned char* mat_zz_mul(const unsigned char* A_buf, const unsigned char* B_buf, long size) {
         mat_ZZ A, B;
-        from_cstring(A, A_str);
-        from_cstring(B, B_str);
-        return to_cstring(A * B);
+        export_bytes_to_zz_matrix(A_buf, size, A);
+        export_bytes_to_zz_matrix(B_buf, size, B);
+        mat_ZZ result = A * B;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* mat_zz_mul_vec(const char* A_str, const char* v_str) {
-        mat_ZZ A;
-        vec_ZZ v;
-        from_cstring(A, A_str);
-        from_cstring(v, v_str);
-        return to_cstring(A * v);
-    }
-
-    char* mat_zz_mul_scalar(const char* A_str, const char* x_str) {
-        mat_ZZ A;
-        ZZ x;
-        from_cstring(A, A_str);
-        from_cstring(x, x_str);
-        return to_cstring(A * x);
-    }
-
-    char* mat_zz_transpose(const char* A_str) {
-        mat_ZZ A;
-        from_cstring(A, A_str);
-        return to_cstring(transpose(A));
-    }
-
-    char* mat_zz_inv(const char* A_str) {
-        mat_ZZ A;
-        from_cstring(A, A_str);
-        return to_cstring(inv(A));
-    }
-
-    char* mat_zz_determinant(const char* A_str) {
-        mat_ZZ A;
-        from_cstring(A, A_str);
-        return to_cstring(determinant(A));
-    }
-
-    char* mat_zz_p_random(long rows, long cols) {
+    unsigned char* mat_zz_mul_vec(const unsigned char* A_buf, const unsigned char* v_buf, long size) {
         mat_ZZ_p A;
-        A.SetDims(rows, cols);
-        for(long i = 0; i < rows; i++)
-            for(long j = 0; j < cols; j++)
-                random(A[i][j]);
-        return to_cstring(A);
+        vec_ZZ_p v;
+        export_bytes_to_zz_p_matrix(A_buf, size, A);
+        export_bytes_to_zz_p_vector(v_buf, size, v);
+        vec_ZZ_p result = A * v;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * item_size];
+        export_zz_p_vector_to_bytes(result, buffer);
+        return buffer;
     }
 
-    char* mat_zz_get_row(const char* matrix_str, long row_idx) {
+    unsigned char* mat_zz_mul_scalar(const unsigned char* A_buf, long size, const char* x_str) {
+        mat_ZZ_p A;
+        ZZ_p x;
+        export_bytes_to_zz_p_matrix(A_buf, size, A);
+        ZZ x_zz;
+        from_cstring(x_zz, x_str);
+        x = conv<ZZ_p>(x_zz);
+        mat_ZZ_p result = A * x;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_p_matrix_to_bytes(result, buffer);
+        return buffer;
+    }
+
+    unsigned char* mat_zz_transpose(const unsigned char* A_buf, long size) {
         mat_ZZ A;
-        from_cstring(A, matrix_str);
-        // Return the row as a vector string
-        return to_cstring(A[row_idx]);
+        export_bytes_to_zz_matrix(A_buf, size, A);
+        mat_ZZ result = transpose(A);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(result, buffer);
+        return buffer;
     }
 
-    // --- Matrix: Negate ---
-    // Used if you need -A
-    char* mat_zz_negate(const char* matrix_str) {
+    unsigned char* mat_zz_inv(const unsigned char* A_buf, long size) {
         mat_ZZ A;
-        from_cstring(A, matrix_str);
-        return to_cstring(-A);
+        export_bytes_to_zz_matrix(A_buf, size, A);
+        mat_ZZ inv_A = inv(A);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(inv_A, buffer);
+        return buffer;
     }
 
-    // --- Matrix: Concatenate Column (Add b to start) ---
-    // Used to create P = [b | A]
-    char* mat_zz_concat_col_first(const char* col_vec_str, const char* matrix_str) {
+    unsigned char* mat_zz_p_random(long size) {
+        mat_ZZ_p A = random_mat_ZZ_p(size, size);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_p_matrix_to_bytes(A, buffer);
+        return buffer;
+    }
+
+    unsigned char* mat_zz_get_row(const unsigned char* matrix_buf, long size, long row_idx) {
+        mat_ZZ A;
+        export_bytes_to_zz_matrix(matrix_buf, size, A);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * item_size];
+        export_zz_vector_to_bytes(A[row_idx], buffer);
+        return buffer;
+    }
+
+    unsigned char* mat_zz_negate(const unsigned char* matrix_buf, long size) {
+        mat_ZZ A;
+        export_bytes_to_zz_matrix(matrix_buf, size, A);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(-A, buffer);
+        return buffer;
+    }
+
+    unsigned char* mat_zz_concat_col_first(const unsigned char* col_vec_buf, long col_len, const unsigned char* matrix_buf, long size) {
         vec_ZZ b;
         mat_ZZ A;
-        from_cstring(b, col_vec_str);
-        from_cstring(A, matrix_str);
+        export_bytes_to_zz_vector(col_vec_buf, col_len, b);
+        export_bytes_to_zz_matrix(matrix_buf, size, A);
 
-        // Validation: Rows must match
         if (b.length() != A.NumRows()) return nullptr;
 
         mat_ZZ res;
-        long rows = A.NumRows();
-        long cols = A.NumCols();
-        
-        // New dimensions: Same rows, Cols + 1
-        res.SetDims(rows, cols + 1);
+        res.SetDims(size, size + 1);
 
-        for(long i = 0; i < rows; i++) {
-            // Set first column to b[i]
+        for(long i = 0; i < size; i++) {
             res[i][0] = b[i];
-            
-            // Copy rest of A
-            for(long j = 0; j < cols; j++) {
+            for(long j = 0; j < size; j++) {
                 res[i][j+1] = A[i][j];
             }
         }
         
-        return to_cstring(res);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * (size + 1) * item_size];
+        export_zz_matrix_to_bytes(res, buffer);
+        return buffer;
     }
 
-    // Matrix Centered Modulo
     mat_ZZ centered_mod(const mat_ZZ& mat, const ZZ& modulus) {
         long rows = mat.NumRows();
         long cols = mat.NumCols();
@@ -318,38 +352,34 @@ extern "C" {
         result.SetDims(rows, cols);
         for (long i = 0; i < rows; ++i) {
             for (long j = 0; j < cols; ++j) {
-                result[i][j] = centered_mod(mat[i][j], modulus);
+                result[i][j] = centered_mod_ZZ(mat[i][j], modulus);
             }
         }
         return result;
     }
 
-    char* mat_add_scalar(const char* A_str, const char* scalar_str) {
+    unsigned char* mat_add_scalar(const unsigned char* A_buf, long size, const char* scalar_str) {
         mat_ZZ A;
         ZZ s;
-        from_cstring(A, A_str);
+        export_bytes_to_zz_matrix(A_buf, size, A);
         from_cstring(s, scalar_str);
 
         mat_ZZ res = A;
-        long rows = A.NumRows();
-        long cols = A.NumCols();
-
-        for (long i = 0; i < rows; ++i) {
-            for (long j = 0; j < cols; ++j) {
+        for (long i = 0; i < size; ++i) {
+            for (long j = 0; j < size; ++j) {
                 res[i][j] += s;
             }
         }
 
-        return to_cstring(res);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+        export_zz_matrix_to_bytes(res, buffer);
+        return buffer;
     }
 
     // --- HSS operations ---
 
-    ZZ Round(const ZZ& x_q, const ZZ& p, const ZZ& q) {
-        
-        // 1. Raw integer rounding: \lfloor (p/q) * x \rceil
-        // Because x_q can actually be negative now, we use a standard rounding trick
-        // that safely handles negative numerators in C++ integer division.
+    ZZ Round_ZZ(const ZZ& x_q, const ZZ& p, const ZZ& q) {
         ZZ numerator = x_q * p;
         ZZ rounded_val;
         
@@ -359,93 +389,272 @@ extern "C" {
             rounded_val = (numerator - (q / 2)) / q;
         }
 
-        // 2. Force the result strictly into R_p
-        return centered_mod(rounded_val, p);
+        return centered_mod_ZZ(rounded_val, p);
     }
 
-    vec_ZZ Round(const vec_ZZ& x_q, const ZZ& p, const ZZ& q) {
+    vec_ZZ Round_ZZ_vec(const vec_ZZ& x_q, const ZZ& p, const ZZ& q) {
         long n = x_q.length();
         vec_ZZ result;
         result.SetLength(n);
 
-        // Precompute q/2 once for the whole vector
         ZZ q_half = q / 2; 
 
         for (long i = 0; i < n; ++i) {
-            // Raw integer rounding: \lfloor (p/q) * x \rceil
             ZZ numerator = x_q[i] * p;
             ZZ rounded_val;
             
-            // Safely handle C++ integer division for both positive and negative values
             if (numerator >= 0) {
                 rounded_val = (numerator + q_half) / q;
             } else {
                 rounded_val = (numerator - q_half) / q;
             }
 
-            // Force the result strictly into R_p using your centered_mod function
-            result[i] = centered_mod(rounded_val, p);
+            result[i] = centered_mod_ZZ(rounded_val, p);
         }
 
         return result;
     }
 
-    char* DDEC(const char* s, const char* C, const char* p, const char* q) {
-        
-        // 1. Matrix-Vector Multiplication 
-        // Uses NTL's native unbounded ZZ multiplication (or your custom mat_vec_mul)
+    unsigned char* DDEC(const unsigned char* s_buf, long s_len, const unsigned char* C_buf, long size, const char* p_str, const char* q_str) {
         ZZ p_zz, q_zz;
-        from_cstring(p_zz, p);
-        from_cstring(q_zz, q);
+        from_cstring(p_zz, p_str);
+        from_cstring(q_zz, q_str);
         vec_ZZ s_vec;
-        from_cstring(s_vec, s);
         mat_ZZ C_mat;
-        from_cstring(C_mat, C);
+        
+        export_bytes_to_zz_vector(s_buf, s_len, s_vec);
+        export_bytes_to_zz_matrix(C_buf, size, C_mat);
+        
         vec_ZZ raw_dots = s_vec * C_mat; 
+        vec_ZZ dots_mod_q = centered_mod_ZZ_vec(raw_dots, q_zz);
+        vec_ZZ rounded_vec = Round_ZZ_vec(dots_mod_q, p_zz, q_zz);
 
-        // 2. Force the raw dot products into the centered R_q ring
-        vec_ZZ dots_mod_q = centered_mod(raw_dots, q_zz);
-
-        // 3. Apply the vectorized Algorithm 7 (Rounding) 
-        vec_ZZ rounded_vec = Round(dots_mod_q, p_zz, q_zz);
-
-        // 4. Lift back to R_q
-        return to_cstring(centered_mod(rounded_vec, q_zz));
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[s_len * item_size];
+        export_zz_vector_to_bytes(centered_mod_ZZ_vec(rounded_vec, q_zz), buffer);
+        return buffer;
     }
 
-    char* OKDM(const char* x, const char* c, const char* p, const char* q) {
-
+    unsigned char* OKDM(const char* x_str, const unsigned char* c_buf, long c_len, const char* p_str, const char* q_str) {
         ZZ x_zz, p_zz, q_zz;
-        from_cstring(x_zz, x);
-        from_cstring(p_zz, p);
-        from_cstring(q_zz, q);
         vec_ZZ c_vec;
-        from_cstring(c_vec, c);
+        
+        from_cstring(x_zz, x_str);
+        from_cstring(p_zz, p_str);
+        from_cstring(q_zz, q_str);
+        export_bytes_to_zz_vector(c_buf, c_len, c_vec);
+        
         mat_ZZ C;
         long d = c_vec.length();
         C.SetDims(d, d);
         
-        // 1. Calculate the scaling factor Delta = \lfloor q/p \rfloor
-        // In C++, integer division automatically computes the floor.
         ZZ Delta = q_zz / p_zz;
         ZZ scaled_x = Delta * x_zz;
         
-        // 2. Fill the matrix so every column is the base ciphertext vector 'c'
         for (long i = 0; i < d; ++i) {
             for (long j = 0; j < d; ++j) {
                 C[i][j] = c_vec[i];
             }
         }
         
-        // 3. Add the scaled plaintext to the diagonal (where i == j)
         for (long j = 0; j < d; ++j) {
             C[j][j] += scaled_x;
-            
-            // 4. Force ONLY the modified diagonal element back into the centered R_q ring
-            // (The rest of the matrix is already safely in R_q from the base vector 'c')
-            C[j][j] = centered_mod(C[j][j], q_zz);
+            C[j][j] = centered_mod_ZZ(C[j][j], q_zz);
         }
         
-        return to_cstring(C);
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[d * d * item_size];
+        export_zz_matrix_to_bytes(C, buffer);
+        return buffer;
+    }
+
+    int find_zz_length(ZZ* num) {
+        return NumBytes(*num);
+    }
+
+    unsigned char* add_vec_then_center(const unsigned char* vec_buf1, long length, const unsigned char* vec_buf2, const char* modulus_str) {
+        vec_ZZ v1, v2;
+        ZZ modulus;
+        export_bytes_to_zz_vector(vec_buf1, length, v1);
+        export_bytes_to_zz_vector(vec_buf2, length, v2);
+        from_cstring(modulus, modulus_str);
+
+        vec_ZZ sum = v1 + v2;
+
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[length * item_size];
+        export_zz_vector_to_bytes(centered_mod_ZZ_vec(sum, modulus), buffer);
+        return buffer;
+    }
+
+    void export_zz_vector_to_bytes(const vec_ZZ& vec, unsigned char* buffer) {
+        long length = vec.length();
+        int item_size = get_modulus_byte_length();
+
+        for (long i = 0; i < length; i++) {
+            unsigned char* current_pos = buffer + (i * item_size);
+            const ZZ& val = vec[i];
+            NTL::BytesFromZZ(current_pos, val, item_size);
+        }
+    }
+
+    void export_zz_p_vector_to_bytes(const NTL::vec_ZZ_p& vec, unsigned char* buffer) {
+        long length = vec.length();
+        int item_size = get_modulus_byte_length();
+
+        for (long i = 0; i < length; i++) {
+            unsigned char* current_pos = buffer + (i * item_size);
+            const NTL::ZZ& val = NTL::rep(vec[i]);
+            NTL::BytesFromZZ(current_pos, val, item_size);
+        }
+    }
+
+    void benchmark_ntl_mul(long size, long iterations, const char* p_str) {
+        NTL::ZZ p = NTL::to_ZZ(p_str);
+        NTL::ZZ_p::init(p);
+
+        std::vector<NTL::mat_ZZ_p> matrices(iterations);
+        std::vector<NTL::vec_ZZ_p> vectors(iterations);
+        std::vector<NTL::vec_ZZ_p> results(iterations);
+
+        for (long i = 0; i < iterations; i++) {
+            NTL::random(matrices[i], size, size);
+            NTL::random(vectors[i], size);
+        }
+
+        std::cout << "Starting benchmark for " << iterations << " iterations..." << std::endl;
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * item_size];
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        for (long i = 0; i < iterations; i++) {
+            NTL::mul(results[i], matrices[i], vectors[i]);
+            export_zz_p_vector_to_bytes(results[i], buffer);
+        }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+
+        std::cout << "Total time: " << diff.count() << " seconds" << std::endl;
+        std::cout << "Average time per multiplication: " << avg << " ms" << std::endl;
+        delete[] buffer;
+    }
+
+    void export_zz_matrix_to_bytes(const mat_ZZ& matrix, unsigned char* buffer) {
+        long rows = matrix.NumRows();
+        long cols = matrix.NumCols();
+        int item_size = get_modulus_byte_length();
+
+        for (long i = 0; i < rows; i++) {
+            for (long j = 0; j < cols; j++) {
+                unsigned char* current_pos = buffer + ((i * cols + j) * item_size);
+                const ZZ& val = matrix[i][j];
+                NTL::BytesFromZZ(current_pos, val, item_size);
+            }
+        }
+    }
+
+    void export_zz_p_matrix_to_bytes(const NTL::mat_ZZ_p& matrix, unsigned char* buffer) {
+        long rows = matrix.NumRows();
+        long cols = matrix.NumCols();
+        int item_size = get_modulus_byte_length();
+
+        for (long i = 0; i < rows; i++) {
+            for (long j = 0; j < cols; j++) {
+                unsigned char* current_pos = buffer + ((i * cols + j) * item_size);
+                const NTL::ZZ& val = NTL::rep(matrix[i][j]);
+                NTL::BytesFromZZ(current_pos, val, item_size);
+            }
+        }
+    }
+
+    void export_bytes_to_zz_vector(const unsigned char* buffer, long length, vec_ZZ& vec) {
+        int item_size = get_modulus_byte_length();
+        vec.SetLength(length);
+        for (long i = 0; i < length; i++) {
+            const unsigned char* current_pos = buffer + (i * item_size);
+            ZZ val;
+            NTL::ZZFromBytes(val, current_pos, item_size);
+            vec[i] = val;
+        }
+    }
+
+    void export_bytes_to_zz_p_vector(const unsigned char* buffer, long length, vec_ZZ_p& vec) {
+        int item_size = get_modulus_byte_length();
+        vec.SetLength(length);
+        for (long i = 0; i < length; i++) {
+            const unsigned char* current_pos = buffer + (i * item_size);
+            ZZ val;
+            NTL::ZZFromBytes(val, current_pos, item_size);
+            vec[i] = conv<ZZ_p>(val);
+        }
+    }
+
+    void export_bytes_to_zz_matrix(const unsigned char* buffer, long size, mat_ZZ& matrix) {
+        int item_size = get_modulus_byte_length();
+        matrix.SetDims(size, size);
+        for (long i = 0; i < size; i++) {
+            for (long j = 0; j < size; j++) {
+                const unsigned char* current_pos = buffer + ((i * size + j) * item_size);
+                ZZ val;
+                NTL::ZZFromBytes(val, current_pos, item_size);
+                matrix[i][j] = val;
+            }
+        }
+    }
+
+    void export_bytes_to_zz_p_matrix(const unsigned char* buffer, long size, mat_ZZ_p& matrix) {
+        int item_size = get_modulus_byte_length();
+        matrix.SetDims(size, size);
+        for (long i = 0; i < size; i++) {
+            for (long j = 0; j < size; j++) {
+                const unsigned char* current_pos = buffer + ((i * size + j) * item_size);
+                ZZ val;
+                NTL::ZZFromBytes(val, current_pos, item_size);
+                matrix[i][j] = conv<ZZ_p>(val);
+            }
+        }
+    }
+
+    void benchmark_ntl_add_mat(long size, long iterations, const char* p_str) {
+        NTL::ZZ p = NTL::to_ZZ(p_str);
+        NTL::ZZ_p::init(p);
+
+        std::vector<NTL::mat_ZZ_p> matricesA(iterations);
+        std::vector<NTL::mat_ZZ_p> matricesB(iterations);
+        std::vector<NTL::mat_ZZ_p> results(iterations);
+
+        for (long i = 0; i < iterations; i++) {
+            NTL::random(matricesA[i], size, size);
+            NTL::random(matricesB[i], size, size);
+        }
+
+        std::cout << "Starting benchmark for " << iterations << " iterations..." << std::endl;
+
+        int item_size = get_modulus_byte_length();
+        unsigned char* buffer = new unsigned char[size * size * item_size];
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        for (long i = 0; i < iterations; i++) {
+            NTL::add(results[i], matricesA[i], matricesB[i]);
+            export_zz_p_matrix_to_bytes(results[i], buffer);
+        }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+
+        std::cout << "Total time: " << diff.count() << " seconds" << std::endl;
+        std::cout << "Average time per addition: " << avg << " ms" << std::endl;
+        delete[] buffer;
+    }
+
+    ZZ* get_modulus() {
+        return new ZZ(ZZ_p::modulus());
     }
 }

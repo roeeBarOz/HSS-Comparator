@@ -36,6 +36,11 @@ ffi.cdef("""
     // HSS-specific Operations
     char* DDEC(const char* s, const char* C, const char* p, const char* q);
     char* OKDM(const char* x, const char* C, const char* p, const char* q);
+    char* add_vec_then_center(const char* vec_str1, const char* vec_str2, const char* modulus_str);
+    
+    // Benchmarks
+    void benchmark_ntl_mul(long size, long iterations, const char* p_str);
+    void benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
 """)
 
 # Load the library (ensure you compile all cpp files into this .so)
@@ -170,4 +175,33 @@ def OKDM(x_vec: str, C: str, p: str, q: str) -> str:
     Computes the Oracle Key-Dependent Message operation.
     """
     return _wrap_op(lib.OKDM, x_vec, C, p, q)
+
+def add_vec_then_center(vec_str1: str, vec_str2: str, modulus_str: str) -> str:
+    """
+    Adds two vectors element-wise and then centers the result modulo 'modulus'.
+    Centering means mapping values to the range [-modulus//2, modulus//2].
+    """
+    return _wrap_op(lib.add_vec_then_center, vec_str1, vec_str2, modulus_str)
+
+def benchmark_ntl_mul(size: int, iterations: int, p_str: str):
+    """
+    Benchmarks the matrix-vector multiplication in NTL.
+    
+    Args:
+        size: The dimension of the square matrix and vector.
+        iterations: Number of multiplications to perform for averaging.
+        p_str: The modulus as a string (for random generation).
+    """
+    lib.benchmark_ntl_mul(size, iterations, ffi.new("char[]", p_str.encode()))
+    
+def benchmark_ntl_add_mat(size: int, iterations: int, p_str: str):
+    """
+    Benchmarks the matrix addition in NTL.
+    
+    Args:
+        size: The dimension of the square matrices.
+        iterations: Number of additions to perform for averaging.
+        p_str: The modulus as a string (for random generation).
+    """
+    lib.benchmark_ntl_add_mat(size, iterations, ffi.new("char[]", p_str.encode()))
     
