@@ -3,11 +3,13 @@
 #include <NTL/vec_ZZ_p.h>
 #include <NTL/mat_ZZ_p.h>
 #include <sstream>
+#include <fstream>
 #include <cstring>
 #include <cstdlib>
 #include "vec_mat_ZZ_wrapper.h"
 #include <chrono>
 #include <vector>
+#include <ZZ_wrapper.h>
 
 using namespace NTL;
 using namespace std;
@@ -49,73 +51,7 @@ extern "C" {
         return res;
     }
 
-    // ================== Vector Operations ==================
-
-    unsigned char* vec_zz_add(const unsigned char* a_buf, const unsigned char* b_buf, long length) {
-        vec_ZZ a, b;
-        export_bytes_to_zz_vector(a_buf, length, a);
-        export_bytes_to_zz_vector(b_buf, length, b);
-        vec_ZZ result = a + b;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_sub(const unsigned char* a_buf, const unsigned char* b_buf, long length) {
-        vec_ZZ a, b;
-        export_bytes_to_zz_vector(a_buf, length, a);
-        export_bytes_to_zz_vector(b_buf, length, b);
-        vec_ZZ result = a - b;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_mul_scalar(const unsigned char* vec_buf, long length, const char* scalar_str) {
-        vec_ZZ v;
-        ZZ s;
-        export_bytes_to_zz_vector(vec_buf, length, v);
-        from_cstring(s, scalar_str);
-        vec_ZZ result = v * s;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_inner_product(const unsigned char* a_buf, const unsigned char* b_buf, long length) {
-        vec_ZZ a, b;
-        ZZ res;
-        export_bytes_to_zz_vector(a_buf, length, a);
-        export_bytes_to_zz_vector(b_buf, length, b);
-        InnerProduct(res, a, b);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[item_size];
-        NTL::BytesFromZZ(buffer, res, item_size);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_p_random(long length) {
-        vec_ZZ_p v = random_vec_ZZ_p(length);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_p_vector_to_bytes(v, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_get(const unsigned char* vec_buf, long length, long index) {
-        vec_ZZ v;
-        export_bytes_to_zz_vector(vec_buf, length, v);
-        ZZ val = v[index];
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[item_size];
-        NTL::BytesFromZZ(buffer, val, item_size);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_gaussian(long length, long k) {
+    vec_ZZ generate_gaussian_vec(long length, long k) {
         vec_ZZ v;
         v.SetLength(length);
 
@@ -132,249 +68,7 @@ extern "C" {
             v[i] = conv<ZZ>(val);
         }
 
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(v, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_prepend_one(const unsigned char* vec_buf, long length) {
-        vec_ZZ v;
-        export_bytes_to_zz_vector(vec_buf, length, v);
-        
-        vec_ZZ res;
-        res.SetLength(length + 1);
-        
-        res[0] = 1;
-        for(long i = 0; i < length; i++) {
-            res[i+1] = v[i];
-        }
-        
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[(length + 1) * item_size];
-        export_zz_vector_to_bytes(res, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_create_e(const char* val_str, long length, long k) {
-        vec_ZZ v;
-        v.SetLength(length);
-        
-        ZZ val;
-        from_cstring(val, val_str);
-        
-        if (length > k && k >= 0) {
-            v[k] = val;
-        }
-        
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(v, buffer);
-        return buffer;
-    }
-
-    unsigned char* vec_zz_random_binary(long length) {
-        vec_ZZ v;
-        v.SetLength(length);
-        
-        for(long i = 0; i < length; i++) {
-            v[i] = conv<ZZ>(RandomBnd(2));
-        }
-        
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(v, buffer);
-        return buffer;
-    }
-
-    vec_ZZ centered_mod_ZZ_vec(const vec_ZZ& vec, const ZZ& modulus) {
-        long n = vec.length();
-        vec_ZZ result;
-        result.SetLength(n);
-        for (long i = 0; i < n; ++i) {
-            result[i] = centered_mod_ZZ(vec[i], modulus);
-        }
-        return result;
-    }
-
-    unsigned char* vec_add_scalar(const unsigned char* vec_buf, long length, const char* scalar_str) {
-        vec_ZZ v;
-        ZZ s;
-        export_bytes_to_zz_vector(vec_buf, length, v);
-        from_cstring(s, scalar_str);
-
-        vec_ZZ res = v;
-        for (long i = 0; i < length; ++i) {
-            res[i] += s;
-        }
-
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(res, buffer);
-        return buffer;
-    }
-
-    // ================== Matrix Operations ==================
-
-    unsigned char* mat_zz_add(const unsigned char* A_buf, const unsigned char* B_buf, long size) {
-        mat_ZZ A, B;
-        export_bytes_to_zz_matrix(A_buf, size, A);
-        export_bytes_to_zz_matrix(B_buf, size, B);
-        mat_ZZ result = A + B;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_sub(const unsigned char* A_buf, const unsigned char* B_buf, long size) {
-        mat_ZZ A, B;
-        export_bytes_to_zz_matrix(A_buf, size, A);
-        export_bytes_to_zz_matrix(B_buf, size, B);
-        mat_ZZ result = A - B;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_mul(const unsigned char* A_buf, const unsigned char* B_buf, long size) {
-        mat_ZZ A, B;
-        export_bytes_to_zz_matrix(A_buf, size, A);
-        export_bytes_to_zz_matrix(B_buf, size, B);
-        mat_ZZ result = A * B;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_mul_vec(const unsigned char* A_buf, const unsigned char* v_buf, long size) {
-        mat_ZZ_p A;
-        vec_ZZ_p v;
-        export_bytes_to_zz_p_matrix(A_buf, size, A);
-        export_bytes_to_zz_p_vector(v_buf, size, v);
-        vec_ZZ_p result = A * v;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * item_size];
-        export_zz_p_vector_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_mul_scalar(const unsigned char* A_buf, long size, const char* x_str) {
-        mat_ZZ_p A;
-        ZZ_p x;
-        export_bytes_to_zz_p_matrix(A_buf, size, A);
-        ZZ x_zz;
-        from_cstring(x_zz, x_str);
-        x = conv<ZZ_p>(x_zz);
-        mat_ZZ_p result = A * x;
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_p_matrix_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_transpose(const unsigned char* A_buf, long size) {
-        mat_ZZ A;
-        export_bytes_to_zz_matrix(A_buf, size, A);
-        mat_ZZ result = transpose(A);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(result, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_inv(const unsigned char* A_buf, long size) {
-        mat_ZZ A;
-        export_bytes_to_zz_matrix(A_buf, size, A);
-        mat_ZZ inv_A = inv(A);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(inv_A, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_p_random(long size) {
-        mat_ZZ_p A = random_mat_ZZ_p(size, size);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_p_matrix_to_bytes(A, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_get_row(const unsigned char* matrix_buf, long size, long row_idx) {
-        mat_ZZ A;
-        export_bytes_to_zz_matrix(matrix_buf, size, A);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * item_size];
-        export_zz_vector_to_bytes(A[row_idx], buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_negate(const unsigned char* matrix_buf, long size) {
-        mat_ZZ A;
-        export_bytes_to_zz_matrix(matrix_buf, size, A);
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(-A, buffer);
-        return buffer;
-    }
-
-    unsigned char* mat_zz_concat_col_first(const unsigned char* col_vec_buf, long col_len, const unsigned char* matrix_buf, long size) {
-        vec_ZZ b;
-        mat_ZZ A;
-        export_bytes_to_zz_vector(col_vec_buf, col_len, b);
-        export_bytes_to_zz_matrix(matrix_buf, size, A);
-
-        if (b.length() != A.NumRows()) return nullptr;
-
-        mat_ZZ res;
-        res.SetDims(size, size + 1);
-
-        for(long i = 0; i < size; i++) {
-            res[i][0] = b[i];
-            for(long j = 0; j < size; j++) {
-                res[i][j+1] = A[i][j];
-            }
-        }
-        
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * (size + 1) * item_size];
-        export_zz_matrix_to_bytes(res, buffer);
-        return buffer;
-    }
-
-    mat_ZZ centered_mod(const mat_ZZ& mat, const ZZ& modulus) {
-        long rows = mat.NumRows();
-        long cols = mat.NumCols();
-        mat_ZZ result;
-        result.SetDims(rows, cols);
-        for (long i = 0; i < rows; ++i) {
-            for (long j = 0; j < cols; ++j) {
-                result[i][j] = centered_mod_ZZ(mat[i][j], modulus);
-            }
-        }
-        return result;
-    }
-
-    unsigned char* mat_add_scalar(const unsigned char* A_buf, long size, const char* scalar_str) {
-        mat_ZZ A;
-        ZZ s;
-        export_bytes_to_zz_matrix(A_buf, size, A);
-        from_cstring(s, scalar_str);
-
-        mat_ZZ res = A;
-        for (long i = 0; i < size; ++i) {
-            for (long j = 0; j < size; ++j) {
-                res[i][j] += s;
-            }
-        }
-
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[size * size * item_size];
-        export_zz_matrix_to_bytes(res, buffer);
-        return buffer;
+        return v;
     }
 
     // --- HSS operations ---
@@ -390,123 +84,6 @@ extern "C" {
         }
 
         return centered_mod_ZZ(rounded_val, p);
-    }
-
-    vec_ZZ Round_ZZ_vec(const vec_ZZ& x_q, const ZZ& p, const ZZ& q) {
-        long n = x_q.length();
-        vec_ZZ result;
-        result.SetLength(n);
-
-        ZZ q_half = q / 2; 
-
-        for (long i = 0; i < n; ++i) {
-            ZZ numerator = x_q[i] * p;
-            ZZ rounded_val;
-            
-            if (numerator >= 0) {
-                rounded_val = (numerator + q_half) / q;
-            } else {
-                rounded_val = (numerator - q_half) / q;
-            }
-
-            result[i] = centered_mod_ZZ(rounded_val, p);
-        }
-
-        return result;
-    }
-
-    unsigned char* DDEC(const unsigned char* s_buf, long s_len, const unsigned char* C_buf, long size, const char* p_str, const char* q_str) {
-        ZZ p_zz, q_zz;
-        from_cstring(p_zz, p_str);
-        from_cstring(q_zz, q_str);
-        vec_ZZ s_vec;
-        mat_ZZ C_mat;
-        
-        export_bytes_to_zz_vector(s_buf, s_len, s_vec);
-        export_bytes_to_zz_matrix(C_buf, size, C_mat);
-        
-        vec_ZZ raw_dots = s_vec * C_mat; 
-        vec_ZZ dots_mod_q = centered_mod_ZZ_vec(raw_dots, q_zz);
-        vec_ZZ rounded_vec = Round_ZZ_vec(dots_mod_q, p_zz, q_zz);
-
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[s_len * item_size];
-        export_zz_vector_to_bytes(centered_mod_ZZ_vec(rounded_vec, q_zz), buffer);
-        return buffer;
-    }
-
-    unsigned char* OKDM(const char* x_str, const unsigned char* c_buf, long c_len, const char* p_str, const char* q_str) {
-        ZZ x_zz, p_zz, q_zz;
-        vec_ZZ c_vec;
-        
-        from_cstring(x_zz, x_str);
-        from_cstring(p_zz, p_str);
-        from_cstring(q_zz, q_str);
-        export_bytes_to_zz_vector(c_buf, c_len, c_vec);
-        
-        mat_ZZ C;
-        long d = c_vec.length();
-        C.SetDims(d, d);
-        
-        ZZ Delta = q_zz / p_zz;
-        ZZ scaled_x = Delta * x_zz;
-        
-        for (long i = 0; i < d; ++i) {
-            for (long j = 0; j < d; ++j) {
-                C[i][j] = c_vec[i];
-            }
-        }
-        
-        for (long j = 0; j < d; ++j) {
-            C[j][j] += scaled_x;
-            C[j][j] = centered_mod_ZZ(C[j][j], q_zz);
-        }
-        
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[d * d * item_size];
-        export_zz_matrix_to_bytes(C, buffer);
-        return buffer;
-    }
-
-    int find_zz_length(ZZ* num) {
-        return NumBytes(*num);
-    }
-
-    unsigned char* add_vec_then_center(const unsigned char* vec_buf1, long length, const unsigned char* vec_buf2, const char* modulus_str) {
-        vec_ZZ v1, v2;
-        ZZ modulus;
-        export_bytes_to_zz_vector(vec_buf1, length, v1);
-        export_bytes_to_zz_vector(vec_buf2, length, v2);
-        from_cstring(modulus, modulus_str);
-
-        vec_ZZ sum = v1 + v2;
-
-        int item_size = get_modulus_byte_length();
-        unsigned char* buffer = new unsigned char[length * item_size];
-        export_zz_vector_to_bytes(centered_mod_ZZ_vec(sum, modulus), buffer);
-        return buffer;
-    }
-
-    void export_zz_vector_to_bytes(const vec_ZZ& vec, unsigned char* buffer) {
-        long length = vec.length();
-        int item_size = get_modulus_byte_length();
-
-        for (long i = 0; i < length; i++) {
-            unsigned char* current_pos = buffer + (i * item_size);
-            const ZZ& val = vec[i];
-            NTL::BytesFromZZ(current_pos, val, item_size);
-        }
-    }
-
-    void export_zz_p_vector_to_bytes(const NTL::vec_ZZ_p& vec, unsigned char* buffer) {
-        long length = vec.length();
-        int item_size = get_modulus_byte_length();
-
-        for (long i = 0; i < length; i++) {
-            unsigned char* current_pos = buffer + (i * item_size);
-            const NTL::ZZ& val = NTL::rep(vec[i]);
-            NTL::BytesFromZZ(current_pos, val, item_size);
-        }
     }
 
     void benchmark_ntl_mul(long size, long iterations, const char* p_str) {
@@ -530,7 +107,6 @@ extern "C" {
 
         for (long i = 0; i < iterations; i++) {
             NTL::mul(results[i], matrices[i], vectors[i]);
-            export_zz_p_vector_to_bytes(results[i], buffer);
         }
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -541,82 +117,6 @@ extern "C" {
         std::cout << "Total time: " << diff.count() << " seconds" << std::endl;
         std::cout << "Average time per multiplication: " << avg << " ms" << std::endl;
         delete[] buffer;
-    }
-
-    void export_zz_matrix_to_bytes(const mat_ZZ& matrix, unsigned char* buffer) {
-        long rows = matrix.NumRows();
-        long cols = matrix.NumCols();
-        int item_size = get_modulus_byte_length();
-
-        for (long i = 0; i < rows; i++) {
-            for (long j = 0; j < cols; j++) {
-                unsigned char* current_pos = buffer + ((i * cols + j) * item_size);
-                const ZZ& val = matrix[i][j];
-                NTL::BytesFromZZ(current_pos, val, item_size);
-            }
-        }
-    }
-
-    void export_zz_p_matrix_to_bytes(const NTL::mat_ZZ_p& matrix, unsigned char* buffer) {
-        long rows = matrix.NumRows();
-        long cols = matrix.NumCols();
-        int item_size = get_modulus_byte_length();
-
-        for (long i = 0; i < rows; i++) {
-            for (long j = 0; j < cols; j++) {
-                unsigned char* current_pos = buffer + ((i * cols + j) * item_size);
-                const NTL::ZZ& val = NTL::rep(matrix[i][j]);
-                NTL::BytesFromZZ(current_pos, val, item_size);
-            }
-        }
-    }
-
-    void export_bytes_to_zz_vector(const unsigned char* buffer, long length, vec_ZZ& vec) {
-        int item_size = get_modulus_byte_length();
-        vec.SetLength(length);
-        for (long i = 0; i < length; i++) {
-            const unsigned char* current_pos = buffer + (i * item_size);
-            ZZ val;
-            NTL::ZZFromBytes(val, current_pos, item_size);
-            vec[i] = val;
-        }
-    }
-
-    void export_bytes_to_zz_p_vector(const unsigned char* buffer, long length, vec_ZZ_p& vec) {
-        int item_size = get_modulus_byte_length();
-        vec.SetLength(length);
-        for (long i = 0; i < length; i++) {
-            const unsigned char* current_pos = buffer + (i * item_size);
-            ZZ val;
-            NTL::ZZFromBytes(val, current_pos, item_size);
-            vec[i] = conv<ZZ_p>(val);
-        }
-    }
-
-    void export_bytes_to_zz_matrix(const unsigned char* buffer, long size, mat_ZZ& matrix) {
-        int item_size = get_modulus_byte_length();
-        matrix.SetDims(size, size);
-        for (long i = 0; i < size; i++) {
-            for (long j = 0; j < size; j++) {
-                const unsigned char* current_pos = buffer + ((i * size + j) * item_size);
-                ZZ val;
-                NTL::ZZFromBytes(val, current_pos, item_size);
-                matrix[i][j] = val;
-            }
-        }
-    }
-
-    void export_bytes_to_zz_p_matrix(const unsigned char* buffer, long size, mat_ZZ_p& matrix) {
-        int item_size = get_modulus_byte_length();
-        matrix.SetDims(size, size);
-        for (long i = 0; i < size; i++) {
-            for (long j = 0; j < size; j++) {
-                const unsigned char* current_pos = buffer + ((i * size + j) * item_size);
-                ZZ val;
-                NTL::ZZFromBytes(val, current_pos, item_size);
-                matrix[i][j] = conv<ZZ_p>(val);
-            }
-        }
     }
 
     void benchmark_ntl_add_mat(long size, long iterations, const char* p_str) {
@@ -641,7 +141,6 @@ extern "C" {
 
         for (long i = 0; i < iterations; i++) {
             NTL::add(results[i], matricesA[i], matricesB[i]);
-            export_zz_p_matrix_to_bytes(results[i], buffer);
         }
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -654,7 +153,294 @@ extern "C" {
         delete[] buffer;
     }
 
-    ZZ* get_modulus() {
-        return new ZZ(ZZ_p::modulus());
+    char* Setup(const char* lambda, long n, long m, long q_length, long p_length) {
+        ZZ* p = new ZZ(INIT_SIZE, p_length);
+        RandomPrime(*p, p_length, 100);
+        ZZ* q_divided_by_p = new ZZ(INIT_SIZE, q_length - p_length);
+        RandomPrime(*q_divided_by_p, q_length - p_length, 100);
+        ZZ* q = new ZZ();
+        *q = (*p) * (*q_divided_by_p);
+        ZZ_p::init(*q);
+        LWE_Keypair key = Gen(lambda, n, m);
+        vec_ZZ_p s_0 = random_vec_ZZ_p(n);
+        vec_ZZ_p s_1 = key.s - s_0;
+        // TODO: need to send s_0, s_1, seed, b, prf_key to python
     }
+
+    // HELPER: Generates exactly one element of Matrix A at coordinate (row_i, col_j)
+    ZZ_p generate_A_ij(const uint8_t* seed, long row_i, long col_j) {
+        uint8_t plaintext[64] = {0};  // Dummy plaintext
+        uint8_t ciphertext[64] = {0}; // Holds the AES keystream
+        uint8_t nonce[16] = {0};
+
+        // We make the generation uniquely deterministic by embedding the exact 
+        // row and column indices directly into the 16-byte AES nonce.
+        std::memcpy(nonce, &row_i, sizeof(long));
+        std::memcpy(nonce + 8, &col_j, sizeof(long));
+
+        // Blast 64 bytes of AES-CTR
+        aesni_ctr_encrypt(seed, nonce, plaintext, ciphertext, 64);
+
+        // Convert the raw AES bytes to NTL's BigInt, then to ZZ_p.
+        // ZZ_p automatically applies modulo q based on your global ZZ_p::init() setup.
+        ZZ val = ZZFromBytes(ciphertext, 64);
+        return conv<ZZ_p>(val);
+    }
+
+    vec_ZZ_p generate_A_row(const uint8_t* seed, long row_i, long num_cols) {
+        vec_ZZ_p row;
+        row.SetLength(num_cols);
+        uint64_t stream_length = num_cols * 64; // Each A_ij requires 64 bytes of AES keystream
+        std::vector<uint8_t> plaintext(stream_length, 0);
+        std::vector<uint8_t> ciphertext(stream_length, 0);
+        uint8_t nonce[16] = {0};
+
+        std::memcpy(nonce, &row_i, sizeof(long));
+        aesni_ctr_encrypt(seed, nonce, plaintext.data(), ciphertext.data(), stream_length);
+
+        for (long col_j = 0; col_j < num_cols; col_j++) {
+            row[col_j] = conv<ZZ_p>(ZZFromBytes(ciphertext.data() + (col_j * 64), 64));
+        }
+        return row;
+    }
+
+    vec_ZZ_p generate_sparse_ternary_vec(long n, long hw) {
+        vec_ZZ_p s;
+        s.SetLength(n);
+
+        // 1. Initialize the entire vector to strictly zero
+        for (long i = 0; i < n; ++i) {
+            s[i] = conv<ZZ_p>(0);
+        }
+
+        long non_zeros_added = 0;
+
+        // 2. Loop until we have successfully placed exactly 'hw' elements
+        while (non_zeros_added < hw) {
+            // Pick a random index inside the vector bounds
+            long idx = rand() % n; 
+
+            // 3. Only assign a value if this index is currently empty (zero)
+            if (IsZero(s[idx])) {
+                
+                // Randomly flip a coin to assign either 1 or -1
+                if (rand() % 2 == 0) {
+                    s[idx] = conv<ZZ_p>(1);
+                } else {
+                    // NTL safely wraps -1 to (q - 1) under the hood
+                    s[idx] = conv<ZZ_p>(-1); 
+                }
+                
+                non_zeros_added++;
+            }
+        }
+
+        return s;
+    }
+
+    // MAIN GEN FUNCTION
+    LWE_Keypair Gen(const char* lambda, long n, long m) {
+        LWE_Keypair keys;
+
+        // 1. Generate the secret s and error e
+        keys.s = generate_sparse_ternary_vec(n, 100);
+        vec_ZZ e = generate_gaussian_vec(m, 3); 
+        
+        // 2. Generate a random 16-byte seed for the public matrix A
+        for (int i = 0; i < 16; i++) {
+            keys.seed[i] = rand() % 256; 
+            keys.prf_key[i] = rand() % 256; // Also generate a random PRF key
+        }
+
+        keys.b.SetLength(m);
+        std::vector<long> nz_indices; // non-zero indices of s for efficient generation of b = A*s + e
+        for (long j = 0; j < n; ++j) {
+            if (!IsZero(keys.s[j])) {
+                nz_indices.push_back(j);
+            }
+        }
+
+        // 4. Compute b = A*s + e (Row by Row)
+        for (long i = 0; i < m; ++i) {
+            ZZ_p dot_product = conv<ZZ_p>(0);
+
+            // ONLY generate the elements of A that correspond to a non-zero secret!
+            for (long col_j : nz_indices) {
+                ZZ_p A_ij = generate_A_ij(keys.seed, i, col_j);
+                dot_product += A_ij * keys.s[col_j];
+            }
+
+            // Add the gaussian error for this specific row
+            // b_i = (A_i * s) + e_i
+            keys.b[i] = dot_product + conv<ZZ_p>(e[i]);
+        }
+
+        return keys;
+    }
+
+    std::vector<vec_ZZ_p> Gen_OKDM_Chunk(const uint8_t* seed_A, const vec_ZZ_p& b, const ZZ_p& message, long start_row, long num_rows, long m) {
+        std::vector<vec_ZZ_p> chunk(num_rows);
+        int n = b.length() - 1; // since b is (n+1) long after prepending the message
+        int d = b.length(); // dimension of the output vector (which is n+1)
+
+        for (long i = 0; i < num_rows; i++) {
+            chunk[i].SetLength(d);
+            clear(chunk[i]);
+        }
+
+        struct Request { int chunk_row; int sign; };
+        std::vector<std::vector<Request>> needed_indices(m);
+
+        int hw_r = 2048; // the hamming weight of r, might need to be modified.
+        for (long i = 0; i < num_rows; i++) {
+            long non_zeros = 0;
+            while (non_zeros < hw_r) 
+            {
+                long idx = rand() % m;
+                needed_indices[idx].push_back({(int)i, (rand() % 2 == 0) ? 1 : -1});
+                non_zeros++; 
+            }
+        }
+
+        for (int i = 0; i < m; i++) {
+            if (needed_indices[i].empty()) continue;
+
+            vec_ZZ_p A_row = generate_A_row(seed_A, i, n);
+
+            for (const auto& req : needed_indices[i]) {
+                for (long j = 0; j < n; j++) {
+                    chunk[req.chunk_row][j] += req.sign * A_row[j];
+                }
+                chunk[req.chunk_row][n] += req.sign * b[i];
+            }
+        }
+
+        for (long i = 0; i < num_rows; i++) {
+            long global_row_idx = start_row + i;
+            if (global_row_idx <= n) {
+                chunk[i][global_row_idx] += message; // Add the message to the diagonal element
+            }
+        }
+
+        return chunk;
+    }
+
+    void save_chunk_to_file(const std::vector<vec_ZZ_p>& chunk, std::ofstream& out_file) {
+        long num_rows = chunk.size();
+        long row_length = chunk[0].length();
+        int item_size_in_bytes = get_modulus_byte_length();
+        long chunk_size = num_rows * row_length * item_size_in_bytes;
+        std::vector<uint8_t> chunk_buffer(chunk_size, 0);
+
+        for (long i = 0; i < num_rows; i++) {
+            for (long j = 0; j < row_length; j++) {
+                unsigned char* current_pos = chunk_buffer.data() + ((i * row_length + j) * item_size_in_bytes);
+                NTL::BytesFromZZ(current_pos, rep(chunk[i][j]), item_size_in_bytes);
+            }
+        }
+
+        out_file.write(reinterpret_cast<const char*>(chunk_buffer.data()), chunk_size);
+    }
+
+    void OKDM(const uint8_t* seed, const vec_ZZ_p& b, const ZZ_p& message, std::string filename, long m) {
+        std::ofstream out_file(filename, std::ios::binary);
+        if (!out_file.is_open()) {
+            throw std::runtime_error("Failed to open output file");
+        }
+        long chunk_size = 1024; // number of rows per chunk, can be tuned based on memory constraints
+        for (long start_row = 0; start_row < b.length(); start_row += chunk_size) {
+            long current_chunk_size = std::min(chunk_size, b.length() - start_row);
+            std::vector<vec_ZZ_p> chunk = Gen_OKDM_Chunk(seed, b, message, start_row, current_chunk_size, m);
+            save_chunk_to_file(chunk, out_file);
+        }
+        out_file.close();
+    }
+
+    std::vector<vec_ZZ_p> Load_OKDM_Chunk(std::ifstream& in_file, long num_rows, long row_length) {
+        int item_size_in_bytes = get_modulus_byte_length();
+        long chunk_size = num_rows * row_length * item_size_in_bytes;
+        std::vector<uint8_t> chunk_buffer(chunk_size, 0);
+        in_file.read(reinterpret_cast<char*>(chunk_buffer.data()), chunk_size);
+
+        std::vector<vec_ZZ_p> chunk(num_rows);
+        for (long i = 0; i < num_rows; i++) {
+            chunk[i].SetLength(row_length);
+            for (long j = 0; j < row_length; j++) {
+                unsigned char* current_pos = chunk_buffer.data() + ((i * row_length + j) * item_size_in_bytes);
+                ZZ val = ZZFromBytes(current_pos, item_size_in_bytes);
+                chunk[i][j] = conv<ZZ_p>(val);
+            }
+        }
+        return chunk;
+    }
+
+    vec_ZZ generate_PRF_mask(const uint8_t* prf_key, long step_index, const ZZ& p, long row_length) {
+        vec_ZZ mask;
+        mask.SetLength(row_length);
+        uint64_t stream_length = row_length * 64;
+
+        std::vector<uint8_t> plaintext(stream_length, 0);
+        std::vector<uint8_t> ciphertext(stream_length, 0);
+        uint8_t nonce[16] = {0};
+        std::memcpy(nonce, &step_index, sizeof(long));
+        aesni_ctr_encrypt(prf_key, nonce, plaintext.data(), ciphertext.data(), stream_length);
+
+        for (long j = 0; j < row_length; j++) {
+            mask[j] = ZZFromBytes(ciphertext.data() + (j * 64), 64);
+        }
+
+        return mask;
+    }
+
+    vec_ZZ DDEC(int b, const vec_ZZ_p& memory_value, const std::string& matrix_filename, 
+                const uint8_t prf_key, long step_index, const ZZ& p, const ZZ& q) {
+        vec_ZZ_p output;
+        long row_length = memory_value.length();
+        output.SetLength(row_length);
+
+        std::ifstream in_file(matrix_filename, std::ios::binary);
+        if (!in_file.is_open()) {
+            throw std::runtime_error("Failed to open matrix file");
+        }
+
+        long chunk_size = 1024; // number of rows per chunk, must match the chunk size used in OKDM
+        for (long start_row = 0; start_row < row_length; start_row += chunk_size) {
+            long current_chunk_size = std::min(chunk_size, row_length - start_row);
+            std::vector<vec_ZZ_p> chunk = Load_OKDM_Chunk(in_file, current_chunk_size, row_length);
+
+            for (long i = 0; i < current_chunk_size; i++) {
+                for (long j = 0; j < row_length; j++) {
+                    output[j] += chunk[i][j] * memory_value[start_row + i];
+                }
+            }
+        }
+        in_file.close();
+        vec_ZZ mask = generate_PRF_mask(&prf_key, step_index, p, row_length);
+        vec_ZZ result;
+        result.SetLength(row_length);
+        for (long i = 0; i < row_length; i++) { 
+            if (b == 0) result[i] = Round_ZZ(rep(output[i]), p, q) + mask[i] % q;
+            else result[i] = Round_ZZ(rep(output[i]), p, q) - mask[i] % q;
+        }
+        return result;
+    }
+
+    vec_ZZ add_memory_values(int b, const vec_ZZ& val1, const vec_ZZ& val2, const ZZ& q,
+                            const uint8_t prf_key, long step_index, long row_length) {
+        vec_ZZ result;
+        long length = val1.length();
+        result.SetLength(length);
+        vec_ZZ mask = generate_PRF_mask(&prf_key, step_index, q, row_length);
+        for (long i = 0; i < length; i++) {
+            if (b == 0) result[i] = (val1[i] + val2[i] + mask[i]) % q;
+            else result[i] = (val1[i] + val2[i] - mask[i] + q) % q; 
+        }
+        return result;
+    }
+}
+
+extern "C" {
+    void aesni_ctr_encrypt(const uint8_t *key, const uint8_t *nonce,
+                           const uint8_t *plaintext, uint8_t *ciphertext,
+                           uint64_t length);
 }

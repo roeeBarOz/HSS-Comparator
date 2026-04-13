@@ -4,11 +4,17 @@ from NTL_interfaces import ZZ_interface as zz
 from NTL_interfaces import vec_mat_ZZ_interface as zz_vm
 import time
 import gc
+import PRF.aes_prf as prf
 
 def main():
     
-    p = zz.zz_random_prime(553, 100)
-    zz_vm.benchmark_ntl_mul(500, 100, str(p))
+    k = int(zz.zz_random(128)).to_bytes(16, 'big')
+    # print(type(k))
+    start = time.time()
+    for i in range(50000):
+        a = prf.apply(k, i.to_bytes(16, 'big'))
+    end = time.time()
+    print("Time taken: ", end - start)
 
 if __name__ == "__main__":
     main()
