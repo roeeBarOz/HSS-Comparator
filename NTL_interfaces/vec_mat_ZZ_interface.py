@@ -4,43 +4,14 @@ ffi = FFI()
 
 ffi.cdef("""
     void free_vec_mat_string(char* str);
-
-    // Vector
-    char* vec_zz_add(const char* a_str, const char* b_str);
-    char* vec_zz_sub(const char* a_str, const char* b_str);
-    char* vec_zz_mul_scalar(const char* vec_str, const char* scalar_str);
-    char* vec_zz_inner_product(const char* a_str, const char* b_str);
-    char* vec_zz_p_random(long length);
-    char* vec_zz_get(const char* vec_str, long index);
-    char* vec_zz_gaussian(long length, long k);
-    char* vec_zz_prepend_one(const char* vec_str);
-    char* vec_zz_create_e1(const char* val_str, long length);
-    char* vec_zz_random_binary(long length);
-    char* vec_add_scalar(const char* vec_str, const char* scalar_str);
-
-    // Matrix
-    char* mat_zz_add(const char* A_str, const char* B_str);
-    char* mat_zz_sub(const char* A_str, const char* B_str);
-    char* mat_zz_mul(const char* A_str, const char* B_str);
-    char* mat_zz_mul_vec(const char* A_str, const char* v_str);
-    char* mat_zz_mul_scalar(const char* A_str, const char* x_str);
-    char* mat_zz_transpose(const char* A_str);
-    char* mat_zz_inv(const char* A_str);
-    char* mat_zz_determinant(const char* A_str);
-    char* mat_zz_p_random(long rows, long cols);
-    char* mat_zz_get_row(const char* matrix_str, long row_idx);
-    char* mat_zz_negate(const char* matrix_str);
-    char* mat_zz_concat_col_first(const char* col_vec_str, const char* matrix_str);
-    char* mat_add_scalar(const char* A_str, const char* scalar_str);
-    
-    // HSS-specific Operations
-    char* DDEC(const char* s, const char* C, const char* p, const char* q);
-    char* OKDM(const char* x, const char* C, const char* p, const char* q);
-    char* add_vec_then_center(const char* vec_str1, const char* vec_str2, const char* modulus_str);
-    
-    // Benchmarks
-    void benchmark_ntl_mul(long size, long iterations, const char* p_str);
+    void benchmark_ntl_mul(long size, long iterations, const char* p_str);    
     void benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
+    void benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times);
+    void Setup(const char* lambda, long n, long m, long q_length, long p_length);
+    void benchmark_ntl_gen_okdm_chunk(const uint8_t* seed_A, const char* b, const char* message,
+                         long start_row, long num_rows, long m, long iterations);
+    void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
+                         const uint8_t prf_key, long step_index, long row_length, long iterations);
 """)
 
 # Load the library (ensure you compile all cpp files into this .so)
@@ -54,154 +25,93 @@ def _wrap_op(func, *args):
     lib.free_vec_mat_string(res_c)
     return res_str
 
+def _wrap_op_no_ret(func, *args):
+    """Helper for functions that return void."""
+    c_args = [ffi.new("char[]", str(arg).encode()) if isinstance(arg, str) else arg for arg in args]
+    func(*c_args)
+
 # --- Python API ---
-
-def vec_add(a_str: str, b_str: str) -> str:
-    return _wrap_op(lib.vec_zz_add, a_str, b_str)
-
-def vec_sub(a_str: str, b_str: str) -> str:
-    return _wrap_op(lib.vec_zz_sub, a_str, b_str)
-
-def vec_mul_scalar(vec_str: str, scalar_str: str) -> str:
-    return _wrap_op(lib.vec_zz_mul_scalar, vec_str, scalar_str)
-
-def vec_inner_product(a_str: str, b_str: str) -> str:
-    return _wrap_op(lib.vec_zz_inner_product, a_str, b_str)
-
-def vec_random(length: int) -> str:
-    # Length is a long, pass directly
-    res_c = lib.vec_zz_p_random(length)
-    res_str = ffi.string(res_c).decode()
-    lib.free_vec_mat_string(res_c)
-    return res_str
-
-def vec_get(vec_str: str, index: int) -> str:
-    return _wrap_op(lib.vec_zz_get, vec_str, index)
-
-def vec_gaussian(length: int, k: int = 2) -> str:
-    """
-    Generates an error vector using Centered Binomial Distribution.
-    
-    Args:
-        length: Size of the vector.
-        k: Distribution width (default 2). 
-           Higher k = higher standard deviation = more noise.
-    """
-    res_c = lib.vec_zz_gaussian(length, k)
-    res_str = ffi.string(res_c).decode()
-    lib.free_vec_mat_string(res_c)
-    return res_str
-
-def vec_prepend_one(vec_str: str) -> str:
-    """Creates (1, v) from v."""
-    return _wrap_op(lib.vec_zz_prepend_one, vec_str)
-
-def vec_create_e(val_str: str, length: int, k: int) -> str:
-    """
-    Creates a vector of 'length' where index k is 'val' and the rest are 0.
-    Result: [0, ..., val, ..., 0] where val is at index k.
-    """
-    return _wrap_op(lib.vec_zz_create_e, val_str, length, k)
-
-def vec_random_binary(length: int) -> str:
-    """
-    Generates a random vector with elements in {0, 1}.
-    """
-    res_c = lib.vec_zz_random_binary(length)
-    res_str = ffi.string(res_c).decode()
-    lib.free_vec_mat_string(res_c)
-    return res_str
-
-def vec_add_scalar(vec_str: str, scalar_str: str) -> str:
-    """Computes v + scalar."""
-    return _wrap_op(lib.vec_add_scalar, vec_str, scalar_str)
-
-def mat_add(A_str: str, B_str: str) -> str:
-    return _wrap_op(lib.mat_zz_add, A_str, B_str)
-
-def mat_sub(A_str: str, B_str: str) -> str:
-    return _wrap_op(lib.mat_zz_sub, A_str, B_str)
-
-def mat_mul(A_str: str, B_str: str) -> str:
-    return _wrap_op(lib.mat_zz_mul, A_str, B_str)
-
-def mat_mul_vec(A_str: str, v_str: str) -> str:
-    return _wrap_op(lib.mat_zz_mul_vec, A_str, v_str)
-
-def mat_mul_scalar(A_str: str, x_str: str) -> str:
-    return _wrap_op(lib.mat_zz_mul_scalar, A_str, x_str)
-
-def mat_transpose(A_str: str) -> str:
-    return _wrap_op(lib.mat_zz_transpose, A_str)
-
-def mat_inv(A_str: str) -> str:
-    return _wrap_op(lib.mat_zz_inv, A_str)
-
-def mat_det(A_str: str) -> str:
-    return _wrap_op(lib.mat_zz_determinant, A_str)
-
-def mat_random(rows: int, cols: int) -> str:
-    res_c = lib.mat_zz_p_random(rows, cols)
-    res_str = ffi.string(res_c).decode()
-    lib.free_vec_mat_string(res_c)
-    return res_str
-
-def mat_get_row(matrix_str: str, row_idx: int) -> str:
-    return _wrap_op(lib.mat_zz_get_row, matrix_str, row_idx)
-
-def mat_neg(matrix_str: str) -> str:
-    """Computes -A."""
-    return _wrap_op(lib.mat_zz_negate, matrix_str)
-
-def mat_concat_col_first(col_vec_str: str, matrix_str: str) -> str:
-    """
-    Concatenates vector b to the LEFT of matrix A.
-    Result = [b | A]
-    """
-    return _wrap_op(lib.mat_zz_concat_col_first, col_vec_str, matrix_str)
-
-def mat_add_scalar(A_str: str, scalar_str: str) -> str:
-    """Computes A + scalar."""
-    return _wrap_op(lib.mat_add_scalar, A_str, scalar_str)
-
-def DDEC(s_vec: str, C: str, p: str, q: str) -> str:
-    """
-    Computes the Distributed Decryption operation.
-    """
-    return _wrap_op(lib.DDEC, s_vec, C, p, q)
-
-def OKDM(x_vec: str, C: str, p: str, q: str) -> str:
-    """
-    Computes the Oracle Key-Dependent Message operation.
-    """
-    return _wrap_op(lib.OKDM, x_vec, C, p, q)
-
-def add_vec_then_center(vec_str1: str, vec_str2: str, modulus_str: str) -> str:
-    """
-    Adds two vectors element-wise and then centers the result modulo 'modulus'.
-    Centering means mapping values to the range [-modulus//2, modulus//2].
-    """
-    return _wrap_op(lib.add_vec_then_center, vec_str1, vec_str2, modulus_str)
 
 def benchmark_ntl_mul(size: int, iterations: int, p_str: str):
     """
-    Benchmarks the matrix-vector multiplication in NTL.
+    Benchmark NTL vector-matrix multiplication for given size, iterations, and modulus p (as string).
     
-    Args:
+    Parameters:
         size: The dimension of the square matrix and vector.
-        iterations: Number of multiplications to perform for averaging.
-        p_str: The modulus as a string (for random generation).
+        iterations: The number of times to repeat the multiplication for benchmarking.
+        p_str: The modulus p as a string.
     """
-    lib.benchmark_ntl_mul(size, iterations, ffi.new("char[]", p_str.encode()))
-    
+    return _wrap_op_no_ret(lib.benchmark_ntl_mul, size, iterations, p_str)
+
 def benchmark_ntl_add_mat(size: int, iterations: int, p_str: str):
     """
-    Benchmarks the matrix addition in NTL.
+    Benchmark NTL matrix addition for given size, iterations, and modulus p (as string).
     
-    Args:
+    Parameters:
         size: The dimension of the square matrices.
-        iterations: Number of additions to perform for averaging.
-        p_str: The modulus as a string (for random generation).
+        iterations: The number of times to repeat the addition for benchmarking.
+        p_str: The modulus p as a string.
     """
-    lib.benchmark_ntl_add_mat(size, iterations, ffi.new("char[]", p_str.encode()))
+    return _wrap_op_no_ret(lib.benchmark_ntl_add_mat, size, iterations, p_str)
+
+def benchmark_ntl_setup(n: int, m: int, q_length: int, p_length: int, times: int):
+    """
+    Benchmark NTL LWE-setup for given parameters.
     
+    Parameters:
+        n: The dimension of the secret vector, and the number of columns in the matrix A.
+        m: The number of rows in the matrix A.
+        q_length: The bit-length of the modulus q.
+        p_length: The bit-length of the modulus p.
+        times: The number of times to repeat the setup for benchmarking.
+    """
+    return _wrap_op_no_ret(lib.benchmark_ntl_setup, n, m, q_length, p_length, times)
+
+def Setup(lambda_str: str, n: int, m: int, q_length: int, p_length: int):
+    """
+    LWE-Setup NTL for given parameters.
+    
+    Parameters:
+        lambda_str: The security parameter as a string (e.g., "128").
+        n: The dimension of the secret vector, and the number of columns in the matrix A.
+        m: The number of rows in the matrix A.
+        q_length: The bit-length of the modulus q.
+        p_length: The bit-length of the modulus p.
+    """
+    return _wrap_op_no_ret(lib.Setup, lambda_str, n, m, q_length, p_length)
+
+def benchmark_ntl_gen_okdm_chunk(seed_A: str, b: str, message: str, start_row: int, num_rows: int, m: int, iterations: int):
+    """
+    Benchmark NTL OKDM chunk generation for given parameters.
+    A chunk is a set of vectors generated from the same seed_A, and saved into a file.
+    This function benchmarks the generation of such a chunk, which is used in the OKDM protocol.
+    
+    Parameters:
+        seed_A: The seed for generating the matrix A (as a string).
+        b: The vector b (as a string).
+        message: The plaintext message (as a string).
+        start_row: The starting row index for the chunk generation.
+        num_rows: The number of rows in the chunk to generate.
+        m: The number of columns in the matrix A.
+        iterations: The number of times to repeat the chunk generation for benchmarking.
+    """
+    # Convert seed_A to bytes if it's a list of integers
+    if isinstance(seed_A, list):
+        seed_A = bytes(seed_A)
+    return _wrap_op_no_ret(lib.benchmark_ntl_gen_okdm_chunk, seed_A, b, message, start_row, num_rows, m, iterations)
+
+def benchmark_ntl_add_memory_values(b: int, val1: str, val2: str, q: str, prf_key: str, step_index: int, row_length: int, iterations: int):
+    """
+    Benchmark NTL LWE-memory value addition for given parameters.
+    
+    Parameters:
+        b: Identifier of the player (0 or 1).
+        val1: The first memory value (as a string).
+        val2: The second memory value (as a string).
+        q: The modulus q (as a string).
+        prf_key: The PRF key used for masking (as a string).
+        step_index: The index of the current step in the protocol (used for PRF masking).
+        row_length: The length of the memory value vectors.
+        iterations: The number of times to repeat the addition for benchmarking.
+    """
+    return _wrap_op_no_ret(lib.benchmark_ntl_add_memory_values, b, val1, val2, q, prf_key, step_index, row_length, iterations)

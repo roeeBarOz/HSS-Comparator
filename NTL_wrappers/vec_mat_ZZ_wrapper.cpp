@@ -9,10 +9,12 @@
 #include "vec_mat_ZZ_wrapper.h"
 #include <chrono>
 #include <vector>
-#include <ZZ_wrapper.h>
+#include "ZZ_wrapper.h"
 
 using namespace NTL;
 using namespace std;
+
+long CHUNK_SIZE = 1024; // Number of rows per chunk for OKDM, can be tuned based on memory constraints
 
 // Helper: Convert NTL object to C-string
 template <typename T>
@@ -153,7 +155,21 @@ extern "C" {
         delete[] buffer;
     }
 
-    char* Setup(const char* lambda, long n, long m, long q_length, long p_length) {
+    void benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times) {
+        char* lambda;
+        string lambda_str = "128"; // Example security parameter, can be modified as needed
+        lambda = strdup(lambda_str.c_str());
+        auto start = std::chrono::high_resolution_clock::now();
+        for (long i = 0; i < times; i++) {
+            Setup(lambda, n, m, q_length, p_length);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / times) * 1000.0;
+        std::cout << "Average time per Setup: " << avg << " ms" << std::endl;
+    }
+
+    void Setup(const char* lambda, long n, long m, long q_length, long p_length) {
         ZZ* p = new ZZ(INIT_SIZE, p_length);
         RandomPrime(*p, p_length, 100);
         ZZ* q_divided_by_p = new ZZ(INIT_SIZE, q_length - p_length);
@@ -278,6 +294,21 @@ extern "C" {
         return keys;
     }
 
+    void benchmark_ntl_gen_okdm_chunk(const uint8_t* seed_A, const char* b, const char* message, long start_row, long num_rows, long m, long iterations) {
+        vec_ZZ_p b_vec;
+        from_cstring(b_vec, b);
+        ZZ_p message_zzp;
+        from_cstring(message_zzp, message);
+        auto start = std::chrono::high_resolution_clock::now();
+        for (long i = 0; i < iterations; i++) {
+            Gen_OKDM_Chunk(seed_A, b_vec, message_zzp, start_row, num_rows, m);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+        std::cout << "Average time per Gen_OKDM_Chunk: " << avg << " ms" << std::endl;
+    }
+
     std::vector<vec_ZZ_p> Gen_OKDM_Chunk(const uint8_t* seed_A, const vec_ZZ_p& b, const ZZ_p& message, long start_row, long num_rows, long m) {
         std::vector<vec_ZZ_p> chunk(num_rows);
         int n = b.length() - 1; // since b is (n+1) long after prepending the message
@@ -288,7 +319,6 @@ extern "C" {
             clear(chunk[i]);
         }
 
-        struct Request { int chunk_row; int sign; };
         std::vector<std::vector<Request>> needed_indices(m);
 
         int hw_r = 2048; // the hamming weight of r, might need to be modified.
@@ -347,9 +377,9 @@ extern "C" {
         if (!out_file.is_open()) {
             throw std::runtime_error("Failed to open output file");
         }
-        long chunk_size = 1024; // number of rows per chunk, can be tuned based on memory constraints
-        for (long start_row = 0; start_row < b.length(); start_row += chunk_size) {
-            long current_chunk_size = std::min(chunk_size, b.length() - start_row);
+
+        for (long start_row = 0; start_row < b.length(); start_row += CHUNK_SIZE) {
+            long current_chunk_size = std::min(CHUNK_SIZE, b.length() - start_row);
             std::vector<vec_ZZ_p> chunk = Gen_OKDM_Chunk(seed, b, message, start_row, current_chunk_size, m);
             save_chunk_to_file(chunk, out_file);
         }
@@ -403,9 +433,8 @@ extern "C" {
             throw std::runtime_error("Failed to open matrix file");
         }
 
-        long chunk_size = 1024; // number of rows per chunk, must match the chunk size used in OKDM
-        for (long start_row = 0; start_row < row_length; start_row += chunk_size) {
-            long current_chunk_size = std::min(chunk_size, row_length - start_row);
+        for (long start_row = 0; start_row < row_length; start_row += CHUNK_SIZE) {
+            long current_chunk_size = std::min(CHUNK_SIZE, row_length - start_row);
             std::vector<vec_ZZ_p> chunk = Load_OKDM_Chunk(in_file, current_chunk_size, row_length);
 
             for (long i = 0; i < current_chunk_size; i++) {
@@ -425,6 +454,23 @@ extern "C" {
         return result;
     }
 
+    void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
+                            const uint8_t prf_key, long step_index, long row_length, long iterations) {
+        auto start = std::chrono::high_resolution_clock::now();
+        vec_ZZ vec_val1, vec_val2;
+        from_cstring(vec_val1, val1);
+        from_cstring(vec_val2, val2);
+        ZZ q_zz;        
+        from_cstring(q_zz, q);
+        for (long i = 0; i < iterations; i++) {
+            add_memory_values(b, vec_val1, vec_val2, q_zz, prf_key, step_index, row_length);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+        std::cout << "Average time per add_memory_values: " << avg << " ms" << std::endl;
+    }
+
     vec_ZZ add_memory_values(int b, const vec_ZZ& val1, const vec_ZZ& val2, const ZZ& q,
                             const uint8_t prf_key, long step_index, long row_length) {
         vec_ZZ result;
@@ -437,10 +483,4 @@ extern "C" {
         }
         return result;
     }
-}
-
-extern "C" {
-    void aesni_ctr_encrypt(const uint8_t *key, const uint8_t *nonce,
-                           const uint8_t *plaintext, uint8_t *ciphertext,
-                           uint64_t length);
 }

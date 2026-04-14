@@ -3,6 +3,7 @@
 #include <NTL/ZZ.h>
 #include <NTL/vec_ZZ.h>
 #include <NTL/mat_ZZ.h>
+#include <vector>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,6 +15,8 @@ extern "C" {
         NTL::vec_ZZ_p b;       // Public Key b (b = A*s + e)
         uint8_t prf_key[16]; // PRF key for generating A rows on-the-fly
     };
+    
+    struct Request { int chunk_row; int sign; };
 
     int get_modulus_byte_length();    
     void free_vec_mat_string(unsigned char* str);
@@ -24,22 +27,34 @@ extern "C" {
     NTL::ZZ Round_ZZ(const NTL::ZZ& x_q, const NTL::ZZ& p, const NTL::ZZ& q);
     void benchmark_ntl_mul(long size, long iterations, const char* p_str);    
     void benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
-    char* Setup(const char* lambda, long n, long m, long q_length, long p_length);
+    void benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times);
+    void Setup(const char* lambda, long n, long m, long q_length, long p_length);
     NTL::ZZ_p generate_A_ij(const uint8_t* seed, long i, long j);
     NTL::vec_ZZ_p generate_A_row(const uint8_t* seed, long row_i, long length);
     NTL::vec_ZZ_p generate_sparse_ternary_vec(long length, long hw);
     LWE_Keypair Gen(const char* lambda, long n, long m);
-    std::vector<NTL::vec_ZZ_p> Gen_OKDM_Chunk(const uint8_t* seed_A, const NTL::vec_ZZ_p& b, const NTL::ZZ_p& message, long start_row, long num_rows, long m);
+    void benchmark_ntl_gen_okdm_chunk(const uint8_t* seed_A, const char* b, const char* message, long start_row, 
+                         long num_rows, long m, long iterations);
+    std::vector<NTL::vec_ZZ_p> Gen_OKDM_Chunk(const uint8_t* seed_A, const NTL::vec_ZZ_p& b, const NTL::ZZ_p& message,
+                         long start_row, long num_rows, long m);
     void save_chunk_to_file(const std::vector<NTL::vec_ZZ_p>& chunk, std::ofstream& out_file);
     void OKDM(const uint8_t* seed, const NTL::vec_ZZ_p& b, const NTL::ZZ_p& message, std::string filename, long m);
     std::vector<NTL::vec_ZZ_p> Load_OKDM_Chunk(std::ifstream& in_file, long num_rows, long row_length);
     NTL::vec_ZZ generate_PRF_mask(const uint8_t* prf_key, long step_index, const NTL::ZZ& p, long row_length);
     NTL::vec_ZZ DDEC(int b, const NTL::vec_ZZ_p& memory_value, const std::string& matrix_filename, 
-                const uint8_t prf_key, long step_index, const NTL::ZZ& p, const NTL::ZZ& q);
+                         const uint8_t prf_key, long step_index, const NTL::ZZ& p, const NTL::ZZ& q);
+    void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
+                         const uint8_t prf_key, long step_index, long row_length, long iterations);
     NTL::vec_ZZ add_memory_values(int b, const NTL::vec_ZZ& val1, const NTL::vec_ZZ& val2,
-                const NTL::ZZ& q, const uint8_t prf_key, long step_index, long row_length);
+                         const NTL::ZZ& q, const uint8_t prf_key, long step_index, long row_length);
 
 #ifdef __cplusplus
+}
+
+extern "C" {
+    void aesni_ctr_encrypt(const uint8_t *key, const uint8_t *nonce,
+                           const uint8_t *plaintext, uint8_t *ciphertext,
+                           uint64_t length);
 }
 #endif
 

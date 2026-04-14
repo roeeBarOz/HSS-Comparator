@@ -8,13 +8,7 @@ import PRF.aes_prf as prf
 
 def main():
     
-    k = int(zz.zz_random(128)).to_bytes(16, 'big')
-    # print(type(k))
-    start = time.time()
-    for i in range(50000):
-        a = prf.apply(k, i.to_bytes(16, 'big'))
-    end = time.time()
-    print("Time taken: ", end - start)
+    zz_vm.benchmark_ntl_setup(512, 51200, 100, 50, 10)
 
 if __name__ == "__main__":
     main()
