@@ -169,6 +169,15 @@ extern "C" {
         std::cout << "Average time per Setup: " << avg << " ms" << std::endl;
     }
 
+    Public_Key generate_public_key(const LWE_Keypair& key, const vec_ZZ_p& s_share) {
+        Public_Key pk;
+        std::memcpy(pk.seed, key.seed, 16);
+        std::memcpy(pk.prf_key, key.prf_key, 16);
+        pk.b = key.b;
+        pk.s = s_share;
+        return pk;
+    }
+
     void Setup(const char* lambda, long n, long m, long q_length, long p_length) {
         ZZ* p = new ZZ(INIT_SIZE, p_length);
         RandomPrime(*p, p_length, 100);
@@ -177,10 +186,13 @@ extern "C" {
         ZZ* q = new ZZ();
         *q = (*p) * (*q_divided_by_p);
         ZZ_p::init(*q);
+        general_data* data = new general_data{n, m};
         LWE_Keypair key = Gen(lambda, n, m);
         vec_ZZ_p s_0 = random_vec_ZZ_p(n);
         vec_ZZ_p s_1 = key.s - s_0;
-        // TODO: need to send s_0, s_1, seed, b, prf_key to python
+        Public_Key pk0, pk1;
+        pk0 = generate_public_key(key, s_0);
+        pk1 = generate_public_key(key, s_1);
     }
 
     // HELPER: Generates exactly one element of Matrix A at coordinate (row_i, col_j)
@@ -294,116 +306,6 @@ extern "C" {
         return keys;
     }
 
-    void benchmark_ntl_gen_okdm_chunk(const uint8_t* seed_A, const char* b, const char* message, long start_row, long num_rows, long m, long iterations) {
-        vec_ZZ_p b_vec;
-        from_cstring(b_vec, b);
-        ZZ_p message_zzp;
-        from_cstring(message_zzp, message);
-        auto start = std::chrono::high_resolution_clock::now();
-        for (long i = 0; i < iterations; i++) {
-            Gen_OKDM_Chunk(seed_A, b_vec, message_zzp, start_row, num_rows, m);
-        }
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> diff = end - start;
-        double avg = (diff.count() / iterations) * 1000.0;
-        std::cout << "Average time per Gen_OKDM_Chunk: " << avg << " ms" << std::endl;
-    }
-
-    std::vector<vec_ZZ_p> Gen_OKDM_Chunk(const uint8_t* seed_A, const vec_ZZ_p& b, const ZZ_p& message, long start_row, long num_rows, long m) {
-        std::vector<vec_ZZ_p> chunk(num_rows);
-        int n = b.length() - 1; // since b is (n+1) long after prepending the message
-        int d = b.length(); // dimension of the output vector (which is n+1)
-
-        for (long i = 0; i < num_rows; i++) {
-            chunk[i].SetLength(d);
-            clear(chunk[i]);
-        }
-
-        std::vector<std::vector<Request>> needed_indices(m);
-
-        int hw_r = 2048; // the hamming weight of r, might need to be modified.
-        for (long i = 0; i < num_rows; i++) {
-            long non_zeros = 0;
-            while (non_zeros < hw_r) 
-            {
-                long idx = rand() % m;
-                needed_indices[idx].push_back({(int)i, (rand() % 2 == 0) ? 1 : -1});
-                non_zeros++; 
-            }
-        }
-
-        for (int i = 0; i < m; i++) {
-            if (needed_indices[i].empty()) continue;
-
-            vec_ZZ_p A_row = generate_A_row(seed_A, i, n);
-
-            for (const auto& req : needed_indices[i]) {
-                for (long j = 0; j < n; j++) {
-                    chunk[req.chunk_row][j] += req.sign * A_row[j];
-                }
-                chunk[req.chunk_row][n] += req.sign * b[i];
-            }
-        }
-
-        for (long i = 0; i < num_rows; i++) {
-            long global_row_idx = start_row + i;
-            if (global_row_idx <= n) {
-                chunk[i][global_row_idx] += message; // Add the message to the diagonal element
-            }
-        }
-
-        return chunk;
-    }
-
-    void save_chunk_to_file(const std::vector<vec_ZZ_p>& chunk, std::ofstream& out_file) {
-        long num_rows = chunk.size();
-        long row_length = chunk[0].length();
-        int item_size_in_bytes = get_modulus_byte_length();
-        long chunk_size = num_rows * row_length * item_size_in_bytes;
-        std::vector<uint8_t> chunk_buffer(chunk_size, 0);
-
-        for (long i = 0; i < num_rows; i++) {
-            for (long j = 0; j < row_length; j++) {
-                unsigned char* current_pos = chunk_buffer.data() + ((i * row_length + j) * item_size_in_bytes);
-                NTL::BytesFromZZ(current_pos, rep(chunk[i][j]), item_size_in_bytes);
-            }
-        }
-
-        out_file.write(reinterpret_cast<const char*>(chunk_buffer.data()), chunk_size);
-    }
-
-    void OKDM(const uint8_t* seed, const vec_ZZ_p& b, const ZZ_p& message, std::string filename, long m) {
-        std::ofstream out_file(filename, std::ios::binary);
-        if (!out_file.is_open()) {
-            throw std::runtime_error("Failed to open output file");
-        }
-
-        for (long start_row = 0; start_row < b.length(); start_row += CHUNK_SIZE) {
-            long current_chunk_size = std::min(CHUNK_SIZE, b.length() - start_row);
-            std::vector<vec_ZZ_p> chunk = Gen_OKDM_Chunk(seed, b, message, start_row, current_chunk_size, m);
-            save_chunk_to_file(chunk, out_file);
-        }
-        out_file.close();
-    }
-
-    std::vector<vec_ZZ_p> Load_OKDM_Chunk(std::ifstream& in_file, long num_rows, long row_length) {
-        int item_size_in_bytes = get_modulus_byte_length();
-        long chunk_size = num_rows * row_length * item_size_in_bytes;
-        std::vector<uint8_t> chunk_buffer(chunk_size, 0);
-        in_file.read(reinterpret_cast<char*>(chunk_buffer.data()), chunk_size);
-
-        std::vector<vec_ZZ_p> chunk(num_rows);
-        for (long i = 0; i < num_rows; i++) {
-            chunk[i].SetLength(row_length);
-            for (long j = 0; j < row_length; j++) {
-                unsigned char* current_pos = chunk_buffer.data() + ((i * row_length + j) * item_size_in_bytes);
-                ZZ val = ZZFromBytes(current_pos, item_size_in_bytes);
-                chunk[i][j] = conv<ZZ_p>(val);
-            }
-        }
-        return chunk;
-    }
-
     vec_ZZ generate_PRF_mask(const uint8_t* prf_key, long step_index, const ZZ& p, long row_length) {
         vec_ZZ mask;
         mask.SetLength(row_length);
@@ -422,36 +324,69 @@ extern "C" {
         return mask;
     }
 
-    vec_ZZ DDEC(int b, const vec_ZZ_p& memory_value, const std::string& matrix_filename, 
-                const uint8_t prf_key, long step_index, const ZZ& p, const ZZ& q) {
-        vec_ZZ_p output;
-        long row_length = memory_value.length();
-        output.SetLength(row_length);
+    vec_ZZ_p generate_OKDM_row(general_data* data, long row_index, const uint8_t* pk_seed, const vec_ZZ_p& pk_b, const ZZ_p& message) {
+        vec_ZZ_p row;
+        row.SetLength(data->n + 1); // +1 for the OKDM ciphertext component
+        for (long i = 0; i <= data->n; i++) row[i] = conv<ZZ_p>(0);
 
-        std::ifstream in_file(matrix_filename, std::ios::binary);
-        if (!in_file.is_open()) {
-            throw std::runtime_error("Failed to open matrix file");
-        }
-
-        for (long start_row = 0; start_row < row_length; start_row += CHUNK_SIZE) {
-            long current_chunk_size = std::min(CHUNK_SIZE, row_length - start_row);
-            std::vector<vec_ZZ_p> chunk = Load_OKDM_Chunk(in_file, current_chunk_size, row_length);
-
-            for (long i = 0; i < current_chunk_size; i++) {
-                for (long j = 0; j < row_length; j++) {
-                    output[j] += chunk[i][j] * memory_value[start_row + i];
-                }
+        for (long j = 0; j < data->m; j++) {
+            int sign = (rand() % 2 == 0) ? 1 : -1;
+            vec_ZZ_p A_row = generate_A_row(pk_seed, j, data->n);
+            for (long k = 0; k < data->n; k++) {
+                row[k] += sign * A_row[k];
             }
+            row[data->n] = sign * pk_b[j];
         }
-        in_file.close();
-        vec_ZZ mask = generate_PRF_mask(&prf_key, step_index, p, row_length);
-        vec_ZZ result;
-        result.SetLength(row_length);
-        for (long i = 0; i < row_length; i++) { 
-            if (b == 0) result[i] = Round_ZZ(rep(output[i]), p, q) + mask[i] % q;
-            else result[i] = Round_ZZ(rep(output[i]), p, q) - mask[i] % q;
+
+        row[row_index] += message; // Embed the message into the designated row
+        return row;
+    }
+
+    mat_ZZ_p* OKDM(general_data* data, Public_Key* pk, const ZZ_p& message) {
+        mat_ZZ_p* okdm_matrix = new mat_ZZ_p();
+        okdm_matrix->SetDims(data->n + 1, data->n + 1);
+
+        for (long i = 0; i <= data->n; i++) {
+            vec_ZZ_p row = generate_OKDM_row(data, i, pk->seed, pk->b, message);
+            (*okdm_matrix)[i] = row;
         }
-        return result;
+        return okdm_matrix;
+    }
+
+    void free_OKDM_matrix(mat_ZZ_p* matrix) {
+        delete matrix;
+    }
+
+    vec_ZZ_p DDEC(const mat_ZZ_p* input_value, const vec_ZZ_p& memory_value, const uint8_t* prf_key, long step_index, const ZZ& p, const ZZ& q) {
+        vec_ZZ_p new_memory = memory_value * (*input_value);
+        vec_ZZ mask = generate_PRF_mask(prf_key, step_index, p, new_memory.length());
+        for (long i = 0; i < new_memory.length(); i++) {
+            new_memory[i] = conv<ZZ_p>(Round_ZZ(conv<ZZ>(new_memory[i]) + mask[i], p, q));
+        }
+        return new_memory;
+    }
+
+    void benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const ZZ_p& message) {
+        auto start = std::chrono::high_resolution_clock::now();
+        for (long i = 0; i < iterations; i++) {
+            mat_ZZ_p* okdm_matrix = OKDM(data, pk, message);
+            free_OKDM_matrix(okdm_matrix);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+        std::cout << "Average time per OKDM: " << avg << " ms" << std::endl;
+    }
+
+    void benchmark_DDEC(int iterations, const mat_ZZ_p* input_value, const vec_ZZ_p& memory_value, const uint8_t* prf_key, long step_index, const ZZ& p, const ZZ& q) {
+        auto start = std::chrono::high_resolution_clock::now();
+        for (long i = 0; i < iterations; i++) {
+            DDEC(input_value, memory_value, prf_key, step_index, p, q);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+        std::cout << "Average time per DDEC: " << avg << " ms" << std::endl;
     }
 
     void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
