@@ -49,6 +49,8 @@ extern "C" {
     NTL::mat_ZZ_p* OKDM(general_data* data, Public_Key* pk, const NTL::ZZ_p& message);
     void free_OKDM_matrix(NTL::mat_ZZ_p* matrix);
     NTL::vec_ZZ_p DDEC(const NTL::mat_ZZ_p* input_value, const NTL::vec_ZZ_p& memory_value, const uint8_t* prf_key, long step_index, const NTL::ZZ& p, const NTL::ZZ& q);
+    void run_benchmark_OKDM(long n, long m, const char* q_str, int iterations);
+    void run_benchmark_DDEC(long n, long m, const char* q_str, const char* p_str, int iterations);
     void benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const NTL::ZZ_p& message);
     void benchmark_DDEC(int iterations, const NTL::mat_ZZ_p* input_value, const NTL::vec_ZZ_p& memory_value, const uint8_t* prf_key, long step_index, const NTL::ZZ& p, const NTL::ZZ& q);
     void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,

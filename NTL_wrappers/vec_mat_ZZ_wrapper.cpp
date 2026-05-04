@@ -366,6 +366,69 @@ extern "C" {
         return new_memory;
     }
 
+    // Wrapper to set up the data and run the OKDM benchmark
+    void run_benchmark_OKDM(long n, long m, const char* q_str, int iterations) {
+        // 1. Initialize the global modulus
+        ZZ q = to_ZZ(q_str);
+        ZZ_p::init(q);
+
+        // 2. Set up the data structures
+        general_data* data = new general_data{n, m};
+        LWE_Keypair key = Gen("128", n, m);
+        
+        // Generate a random share for the secret
+        vec_ZZ_p s_0;
+        s_0.SetLength(n);
+        for (long i = 0; i < n; i++) random(s_0[i]);
+
+        Public_Key pk = generate_public_key(key, s_0);
+        ZZ_p message = conv<ZZ_p>(1); // Dummy message for benchmarking
+
+        // 3. Run the core benchmark
+        std::cout << "Starting OKDM Benchmark for " << iterations << " iterations..." << std::endl;
+        benchmark_OKDM(iterations, data, &pk, message);
+
+        // 4. Cleanup heap memory
+        delete data;
+    }
+
+    // Wrapper to set up the data, generate a test matrix, and run the DDEC benchmark
+    void run_benchmark_DDEC(long n, long m, const char* q_str, const char* p_str, int iterations) {
+        // 1. Initialize the global modulus
+        ZZ q = to_ZZ(q_str);
+        ZZ p = to_ZZ(p_str);
+        ZZ_p::init(q);
+
+        // 2. Set up the base keys
+        general_data data{n, m};
+        LWE_Keypair key = Gen("128", n, m);
+        
+        vec_ZZ_p s_0;
+        s_0.SetLength(n);
+        for (long i = 0; i < n; i++) random(s_0[i]);
+
+        Public_Key pk = generate_public_key(key, s_0);
+        ZZ_p message = conv<ZZ_p>(1);
+
+        // 3. Generate a single OKDM matrix to serve as the benchmark input
+        std::cout << "Preparing 1 OKDM Matrix for DDEC Benchmark evaluation..." << std::endl;
+        mat_ZZ_p* input_matrix = OKDM(&data, &pk, message);
+
+        // 4. Generate a dummy memory state vector for the Server
+        vec_ZZ_p memory_value;
+        memory_value.SetLength(n + 1);
+        for (long i = 0; i <= n; i++) memory_value[i] = conv<ZZ_p>(1);
+
+        long step_index = 1;
+
+        // 5. Run the core benchmark
+        std::cout << "Starting DDEC Benchmark for " << iterations << " iterations..." << std::endl;
+        benchmark_DDEC(iterations, input_matrix, memory_value, pk.prf_key, step_index, p, q);
+
+        // 6. Cleanup heap memory
+        free_OKDM_matrix(input_matrix);
+    }
+
     void benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const ZZ_p& message) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
