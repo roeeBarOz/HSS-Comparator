@@ -1,5 +1,5 @@
 CXX      := g++
-CXXFLAGS := -O3 -march=native -fPIC -Wall -std=c++11 -MMD -MP
+CXXFLAGS := -O3 -march=native -fPIC -Wall -std=c++11 -MMD -MP -g
 
 # Linker Magic: Point to the PRF directory for run-time loading
 LDFLAGS  := -shared -Wl,-rpath='$$ORIGIN/PRF'
@@ -10,7 +10,7 @@ BUILD_DIR := build
 TARGET    := libntl_wrappers.so
 
 # The existing bare-metal AES binary
-AES_SO    := PRF/aesni_ctr.so
+AES_SO    := /home/roee/HSS-Comparator/aesni_ctr.so
 
 SRCS      := $(wildcard $(SRC_DIR)/*.cpp)
 OBJS      := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)

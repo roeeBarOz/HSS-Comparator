@@ -14,10 +14,12 @@ ffi.cdef("""
                          long start_row, long num_rows, long m, long iterations);
     void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
                          const uint8_t prf_key, long step_index, long row_length, long iterations);
+    void run_benchmark_last_mul(long n, long m, const char* q_str, const char* p_str, int iterations);
+    void run_benchmark_last_mem_add(int b, long n, const char* q_str, const char* p_str, int iterations);
 """)
 
 # Load the library (ensure you compile all cpp files into this .so)
-lib = ffi.dlopen("./libntl_wrappers.so")
+lib = ffi.dlopen("/home/roee/HSS-Comparator/libntl_wrappers.so")
 
 def _wrap_op(func, *args):
     """Helper to handle C string conversion and freeing."""
@@ -82,30 +84,30 @@ def Setup(lambda_str: str, n: int, m: int, q_length: int, p_length: int):
     """
     return _wrap_op_no_ret(lib.Setup, lambda_str, n, m, q_length, p_length)
 
-def run_benchmark_OKDM(n: int, m: int, q_str: str, iterations: int):
+def run_benchmark_OKDM(n: int, m: int, q_len: str, iterations: int):
     """
     Benchmark NTL OKDM for given parameters.
     
     Parameters:
         n: The dimension of the secret vector, and the number of columns in the matrix A.
         m: The number of rows in the matrix A.
-        q_str: The modulus q as a string.
+        q_len: The bit-length of the modulus q.
         iterations: The number of times to repeat the OKDM for benchmarking.
     """
-    return _wrap_op_no_ret(lib.run_benchmark_OKDM, n, m, q_str, iterations)
+    return _wrap_op_no_ret(lib.run_benchmark_OKDM, n, m, q_len, iterations)
 
-def run_benchmark_DDEC(n: int, m: int, q_str: str, p_str: str, iterations: int):
+def run_benchmark_DDEC(n: int, m: int, q_len: str, p_len: str, iterations: int):
     """
     Benchmark NTL DDEC for given parameters.
     
     Parameters:
         n: The dimension of the secret vector, and the number of columns in the matrix A.
         m: The number of rows in the matrix A.
-        q_str: The modulus q as a string.
-        p_str: The modulus p as a string.
+        q_len: The bit-length of the modulus q.
+        p_len: The bit-length of the modulus p.
         iterations: The number of times to repeat the DDEC for benchmarking.
     """
-    return _wrap_op_no_ret(lib.run_benchmark_DDEC, n, m, q_str, p_str, iterations)
+    return _wrap_op_no_ret(lib.run_benchmark_DDEC, n, m, q_len, p_len, iterations)
 
 def benchmark_ntl_gen_okdm_chunk(seed_A: str, b: str, message: str, start_row: int, num_rows: int, m: int, iterations: int):
     """
@@ -142,3 +144,29 @@ def benchmark_ntl_add_memory_values(b: int, val1: str, val2: str, q: str, prf_ke
         iterations: The number of times to repeat the addition for benchmarking.
     """
     return _wrap_op_no_ret(lib.benchmark_ntl_add_memory_values, b, val1, val2, q, prf_key, step_index, row_length, iterations)
+
+def run_benchmark_last_mul(n: int, m: int, q_len: str, p_len: str, iterations: int):
+    """
+    Benchmark the last multiplication step in the protocol for given parameters.
+    
+    Parameters:
+        n: The dimension of the secret vector, and the number of columns in the matrix A.
+        m: The number of rows in the matrix A.
+        q_len: The bit-length of the modulus q.
+        p_len: The bit-length of the modulus p.
+        iterations: The number of times to repeat the last multiplication for benchmarking.
+    """
+    return _wrap_op_no_ret(lib.run_benchmark_last_mul, n, m, q_len, p_len, iterations)
+
+def run_benchmark_last_mem_add(b: int, n: int, q_len: str, p_len: str, iterations: int):
+    """
+    Benchmark the last memory addition step in the protocol for given parameters.
+    
+    Parameters:
+        b: Identifier of the player (0 or 1).
+        n: The dimension of the secret vector, and the number of columns in the matrix A.
+        q_len: The bit-length of the modulus q.
+        p_len: The bit-length of the modulus p.
+        iterations: The number of times to repeat the last memory addition for benchmarking.
+    """
+    return _wrap_op_no_ret(lib.run_benchmark_last_mem_add, b, n, q_len, p_len, iterations)

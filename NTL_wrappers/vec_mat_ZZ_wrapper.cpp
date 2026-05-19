@@ -45,10 +45,10 @@ extern "C" {
     }
 
     // Universal Centered Modulo: Forces 'x' into the centered ring of 'modulus'
-    ZZ centered_mod_ZZ(const ZZ& x, const ZZ& modulus) {
-        ZZ res = x % modulus; 
-        if (res > modulus / 2) {
-            res -= modulus;
+    ZZ centered_mod_ZZ(const ZZ& x, general_data* data) {
+        ZZ res = x % data->p; 
+        if (res > data->p_half) {
+            res -= data->p;
         }
         return res;
     }
@@ -75,17 +75,17 @@ extern "C" {
 
     // --- HSS operations ---
 
-    ZZ Round_ZZ(const ZZ& x_q, const ZZ& p, const ZZ& q) {
-        ZZ numerator = x_q * p;
+    ZZ Round_ZZ(const ZZ& x_q, general_data* data) {
+        ZZ numerator = x_q * data->p;
         ZZ rounded_val;
         
         if (numerator >= 0) {
-            rounded_val = (numerator + (q / 2)) / q;
+            rounded_val = (numerator + data->q_half) / data->q;
         } else {
-            rounded_val = (numerator - (q / 2)) / q;
+            rounded_val = (numerator - data->q_half) / data->q;
         }
 
-        return centered_mod_ZZ(rounded_val, p);
+        return centered_mod_ZZ(rounded_val, data);
     }
 
     void benchmark_ntl_mul(long size, long iterations, const char* p_str) {
@@ -186,7 +186,9 @@ extern "C" {
         ZZ* q = new ZZ();
         *q = (*p) * (*q_divided_by_p);
         ZZ_p::init(*q);
-        general_data* data = new general_data{n, m};
+        ZZ q_half = *q / 2;
+        ZZ p_half = *p / 2;
+        general_data* data = new general_data{n, m, *q, *p, q_half, p_half};
         LWE_Keypair key = Gen(lambda, n, m);
         vec_ZZ_p s_0 = random_vec_ZZ_p(n);
         vec_ZZ_p s_1 = key.s - s_0;
@@ -215,21 +217,18 @@ extern "C" {
         return conv<ZZ_p>(val);
     }
 
-    vec_ZZ_p generate_A_row(const uint8_t* seed, long row_i, long num_cols) {
-        vec_ZZ_p row;
-        row.SetLength(num_cols);
-        uint64_t stream_length = num_cols * 64; // Each A_ij requires 64 bytes of AES keystream
-        std::vector<uint8_t> plaintext(stream_length, 0);
-        std::vector<uint8_t> ciphertext(stream_length, 0);
+    void generate_A_row(const uint8_t* seed, long row_i, long num_cols, vec_ZZ& output_row, std::vector<uint8_t>& plaintext, std::vector<uint8_t>& ciphertext, ZZ& temp, const ZZ& q) {
+        
+        uint64_t stream_length = num_cols * 35; // Each A_ij requires at most 35 bytes of AES keystream
         uint8_t nonce[16] = {0};
 
         std::memcpy(nonce, &row_i, sizeof(long));
         aesni_ctr_encrypt(seed, nonce, plaintext.data(), ciphertext.data(), stream_length);
 
         for (long col_j = 0; col_j < num_cols; col_j++) {
-            row[col_j] = conv<ZZ_p>(ZZFromBytes(ciphertext.data() + (col_j * 64), 64));
+            ZZFromBytes(temp, ciphertext.data() + (col_j * 35), 35);
+            rem(output_row[col_j], temp, q); // Ensure we reduce modulo q to fit in ZZ_p
         }
-        return row;
     }
 
     vec_ZZ_p generate_sparse_ternary_vec(long n, long hw) {
@@ -324,56 +323,180 @@ extern "C" {
         return mask;
     }
 
-    vec_ZZ_p generate_OKDM_row(general_data* data, long row_index, const uint8_t* pk_seed, const vec_ZZ_p& pk_b, const ZZ_p& message) {
-        vec_ZZ_p row;
-        row.SetLength(data->n + 1); // +1 for the OKDM ciphertext component
-        for (long i = 0; i <= data->n; i++) row[i] = conv<ZZ_p>(0);
+    mat_ZZ* lazy_OKDM(general_data* data, Public_Key* pk, const ZZ_p& message) {
+        std::vector<std::vector<ZZ>> lazy_matrix(data->n + 1, std::vector<ZZ>(data->n + 1));
 
-        for (long j = 0; j < data->m; j++) {
-            int sign = (rand() % 2 == 0) ? 1 : -1;
-            vec_ZZ_p A_row = generate_A_row(pk_seed, j, data->n);
-            for (long k = 0; k < data->n; k++) {
-                row[k] += sign * A_row[k];
-            }
-            row[data->n] = sign * pk_b[j];
-        }
-
-        row[row_index] += message; // Embed the message into the designated row
-        return row;
-    }
-
-    mat_ZZ_p* OKDM(general_data* data, Public_Key* pk, const ZZ_p& message) {
-        mat_ZZ_p* okdm_matrix = new mat_ZZ_p();
+        mat_ZZ* okdm_matrix = new mat_ZZ();
         okdm_matrix->SetDims(data->n + 1, data->n + 1);
 
+        ZZ zz_message = conv<ZZ>(message);
+
         for (long i = 0; i <= data->n; i++) {
-            vec_ZZ_p row = generate_OKDM_row(data, i, pk->seed, pk->b, message);
-            (*okdm_matrix)[i] = row;
+            for (long j = 0; j <= data->n; j++) {
+                LeftShift(lazy_matrix[i][j], to_ZZ(1), 320);
+                clear(lazy_matrix[i][j]);
+                (*okdm_matrix)[i][j] = conv<ZZ>(0);
+            }
         }
+
+        uint64_t stream_length = data->n * 35; // Each A_ij requires at most 35 bytes of AES keystream
+        std::vector<uint8_t> plaintext(stream_length, 0);
+        std::vector<uint8_t> ciphertext(stream_length, 0);
+        ZZ temp; // Temporary variable for conversion
+        LeftShift(temp, to_ZZ(1), 320); clear(temp);
+
+        ZZ const& q = ZZ_p::modulus();
+
+        vec_ZZ A_row;
+        A_row.SetLength(data->n);
+        vec_ZZ extended_A_row;
+        extended_A_row.SetLength(data->n + 1);
+
+        for (long k = 0; k <= data->n; k++) {
+            LeftShift(extended_A_row[k], to_ZZ(1), 320); clear(extended_A_row[k]);
+        }
+        for (long k = 0; k < data->n; k++) {
+            LeftShift(A_row[k], to_ZZ(1), 320); clear(A_row[k]);
+        }
+
+        for (long j = 0; j < data->m; j++) {
+            generate_A_row(pk->seed, j, data->n, A_row, plaintext, ciphertext, temp, q);
+            for (long k = 0; k < data->n; k++) {
+                extended_A_row[k] = A_row[k];
+            }
+            extended_A_row[data->n] = rep(pk->b[j]);
+            for (long i = 0; i <= data->n; i++) {
+                long random_sign = rand() % 3 - 1;
+                if (random_sign == 1) {
+                    for (long k = 0; k <= data->n; k++) {
+                        lazy_matrix[i][k] += extended_A_row[k];
+                    }
+                }
+                else if (random_sign == -1) {
+                    for (long k = 0; k <= data->n; k++) {
+                        lazy_matrix[i][k] -= extended_A_row[k];
+                    }
+                }
+            }
+        }
+        ZZ temp_rem;
+        LeftShift(temp_rem, to_ZZ(1), 320); clear(temp_rem);
+
+        for (long i = 0; i <= data->n; i++) {
+            for (long k = 0; k <= data->n; k++) {
+                rem(temp_rem, lazy_matrix[i][k], q);
+                if (temp_rem < 0) temp_rem += q;
+                (*okdm_matrix)[i][k] = temp_rem;
+                clear(lazy_matrix[i][k]);
+            }
+            lazy_matrix[i].clear();
+            lazy_matrix[i].shrink_to_fit();
+            (*okdm_matrix)[i][i] += zz_message;
+        }
+        lazy_matrix.clear();
+
         return okdm_matrix;
     }
 
-    void free_OKDM_matrix(mat_ZZ_p* matrix) {
+    mat_ZZ* direct_mod_OKDM(general_data* data, Public_Key* pk, const ZZ_p& message) {
+        mat_ZZ* okdm_matrix = new mat_ZZ();
+        printf("Allocating OKDM matrix of size %ld x %ld\n", data->n + 1, data->n + 1);
+        okdm_matrix->SetDims(data->n + 1, data->n + 1);
+        printf("OKDM matrix allocated. Starting row-by-row generation with direct modulo reduction...\n");
+
+        ZZ zz_message = conv<ZZ>(message);
+
+        // 1. Allocate ONLY ONE temporary row for math
+        // This uses negligible memory compared to the full matrix
+        std::vector<ZZ> lazy_row(data->n + 1);
+        for (long k = 0; k <= data->n; k++) {
+            LeftShift(lazy_row[k], to_ZZ(1), 320); // Hard-lock memory capacity
+            clear(lazy_row[k]);
+        }
+
+        // --- PRE-ALLOCATION FOR AES ---
+        uint64_t stream_length = data->n * 35;
+        std::vector<uint8_t> plaintext(stream_length, 0);
+        std::vector<uint8_t> ciphertext(stream_length, 0);
+        ZZ temp; LeftShift(temp, to_ZZ(1), 320); clear(temp);
+        ZZ const& q = ZZ_p::modulus();
+        vec_ZZ A_row; A_row.SetLength(data->n);
+
+        // 2. THE ROW-BY-ROW ACCUMULATOR
+        // Since we can't hold all lazy rows, we generate them sequentially.
+        for (long i = 0; i <= data->n; i++) {
+            // Reset the single math row
+            for (long k = 0; k <= data->n; k++) clear(lazy_row[k]);
+
+            // Re-generate the PRNG for row 'i' to determine 'choice'
+            // Note: This requires generating Matrix A multiple times, 
+            // but it is the ONLY way to fit in 8GB RAM.
+            for (long j = 0; j < data->m; j++) {
+                srand(i * 10000 + j); // Deterministic ternary choice
+                int choice = rand() % 3;
+
+                if (choice != 0) {
+                    generate_A_row(pk->seed, j, data->n, A_row, plaintext, ciphertext, temp, q);
+                    ZZ const& b_val = rep(pk->b[j]);
+
+                    if (choice == 1) {
+                        for (long k = 0; k < data->n; k++) lazy_row[k] += A_row[k];
+                        lazy_row[data->n] += b_val;
+                    } else {
+                        for (long k = 0; k < data->n; k++) lazy_row[k] -= A_row[k];
+                        lazy_row[data->n] -= b_val;
+                    }
+                }
+            }
+
+            // 3. Final Modulo for JUST this row
+            for (long k = 0; k <= data->n; k++) {
+                ZZ temp_rem;
+                rem(temp_rem, lazy_row[k], q);
+                if (temp_rem < 0) temp_rem += q;
+                (*okdm_matrix)[i][k] = temp_rem;
+            }
+            (*okdm_matrix)[i][i] += zz_message;
+
+            if (i % 50 == 0) printf("Row %ld/%ld processed safely in RAM\n", i, data->n);
+        }
+
+        return okdm_matrix;
+    }
+
+    mat_ZZ* OKDM(general_data* data, Public_Key* pk, const ZZ_p& message) {
+        if (data->n <= 6000) {
+            return lazy_OKDM(data, pk, message);
+        } else {
+            return direct_mod_OKDM(data, pk, message);
+        }
+    }
+
+    void free_OKDM_matrix(mat_ZZ* matrix) {
         delete matrix;
     }
 
-    vec_ZZ_p DDEC(const mat_ZZ_p* input_value, const vec_ZZ_p& memory_value, const uint8_t* prf_key, long step_index, const ZZ& p, const ZZ& q) {
-        vec_ZZ_p new_memory = memory_value * (*input_value);
-        vec_ZZ mask = generate_PRF_mask(prf_key, step_index, p, new_memory.length());
+    vec_ZZ DDEC(const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data) {
+        vec_ZZ new_memory = memory_value * (*input_value);
+        vec_ZZ mask = generate_PRF_mask(prf_key, step_index, data->p, new_memory.length());
         for (long i = 0; i < new_memory.length(); i++) {
-            new_memory[i] = conv<ZZ_p>(Round_ZZ(conv<ZZ>(new_memory[i]) + mask[i], p, q));
+            new_memory[i] = Round_ZZ(conv<ZZ>(new_memory[i]) + mask[i], data);
         }
         return new_memory;
     }
 
     // Wrapper to set up the data and run the OKDM benchmark
-    void run_benchmark_OKDM(long n, long m, const char* q_str, int iterations) {
+    void run_benchmark_OKDM(long n, long m, long q_len, long p_len, int iterations) {
         // 1. Initialize the global modulus
-        ZZ q = to_ZZ(q_str);
+        ZZ p = RandomPrime_ZZ(p_len);
+        ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
+        ZZ q = q_div_by_p * p;
         ZZ_p::init(q);
+        ZZ q_half = q / 2;
+        ZZ p_half = p / 2;
 
         // 2. Set up the data structures
-        general_data* data = new general_data{n, m};
+        general_data* data = new general_data{n, m, q, p, q_half, p_half};
         LWE_Keypair key = Gen("128", n, m);
         
         // Generate a random share for the secret
@@ -393,14 +516,17 @@ extern "C" {
     }
 
     // Wrapper to set up the data, generate a test matrix, and run the DDEC benchmark
-    void run_benchmark_DDEC(long n, long m, const char* q_str, const char* p_str, int iterations) {
+    void run_benchmark_DDEC(long n, long m, long q_len, long p_len, int iterations) {
         // 1. Initialize the global modulus
-        ZZ q = to_ZZ(q_str);
-        ZZ p = to_ZZ(p_str);
+        ZZ p = RandomPrime_ZZ(p_len);
+        ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
+        ZZ q = q_div_by_p * p;
         ZZ_p::init(q);
+        ZZ q_half = q / 2;
+        ZZ p_half = p / 2;
 
         // 2. Set up the base keys
-        general_data data{n, m};
+        general_data data{n, m, q, p, q_half, p_half};
         LWE_Keypair key = Gen("128", n, m);
         
         vec_ZZ_p s_0;
@@ -412,18 +538,18 @@ extern "C" {
 
         // 3. Generate a single OKDM matrix to serve as the benchmark input
         std::cout << "Preparing 1 OKDM Matrix for DDEC Benchmark evaluation..." << std::endl;
-        mat_ZZ_p* input_matrix = OKDM(&data, &pk, message);
+        mat_ZZ* input_matrix = OKDM(&data, &pk, message);
 
         // 4. Generate a dummy memory state vector for the Server
-        vec_ZZ_p memory_value;
+        vec_ZZ memory_value;
         memory_value.SetLength(n + 1);
-        for (long i = 0; i <= n; i++) memory_value[i] = conv<ZZ_p>(1);
+        for (long i = 0; i <= n; i++) memory_value[i] = RandomBnd(q); // Random initial memory state
 
         long step_index = 1;
 
         // 5. Run the core benchmark
         std::cout << "Starting DDEC Benchmark for " << iterations << " iterations..." << std::endl;
-        benchmark_DDEC(iterations, input_matrix, memory_value, pk.prf_key, step_index, p, q);
+        benchmark_DDEC(iterations, input_matrix, memory_value, pk.prf_key, step_index, &data);
 
         // 6. Cleanup heap memory
         free_OKDM_matrix(input_matrix);
@@ -432,7 +558,7 @@ extern "C" {
     void benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const ZZ_p& message) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
-            mat_ZZ_p* okdm_matrix = OKDM(data, pk, message);
+            mat_ZZ* okdm_matrix = OKDM(data, pk, message);
             free_OKDM_matrix(okdm_matrix);
         }
         auto end = std::chrono::high_resolution_clock::now();
@@ -441,10 +567,10 @@ extern "C" {
         std::cout << "Average time per OKDM: " << avg << " ms" << std::endl;
     }
 
-    void benchmark_DDEC(int iterations, const mat_ZZ_p* input_value, const vec_ZZ_p& memory_value, const uint8_t* prf_key, long step_index, const ZZ& p, const ZZ& q) {
+    void benchmark_DDEC(int iterations, const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
-            DDEC(input_value, memory_value, prf_key, step_index, p, q);
+            DDEC(input_value, memory_value, prf_key, step_index, data);
         }
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
@@ -469,6 +595,28 @@ extern "C" {
         std::cout << "Average time per add_memory_values: " << avg << " ms" << std::endl;
     }
 
+    void run_benchmark_add_memory_values(long n, long m, long q_len, long p_len, int iterations) {
+        ZZ p = RandomPrime_ZZ(p_len);
+        ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
+        ZZ q = p * q_div_by_p;
+        LWE_Keypair key = Gen("128", n, m);
+        vec_ZZ val1, val2;
+        val1.SetLength(n);
+        val2.SetLength(n);
+        for (long i = 0; i < n; i++) {
+            val1[i] = RandomBnd(q);
+            val2[i] = RandomBnd(q);
+        }
+        vec_ZZ_p s_0;
+        s_0.SetLength(n);
+        for (long i = 0; i < n; i++) random(s_0[i]);
+
+        Public_Key pk = generate_public_key(key, s_0);
+
+        long step_index = 1;
+        benchmark_ntl_add_memory_values(0, to_cstring(val1), to_cstring(val2), to_cstring(q), *(pk.prf_key), step_index, n, iterations);
+    }
+
     vec_ZZ add_memory_values(int b, const vec_ZZ& val1, const vec_ZZ& val2, const ZZ& q,
                             const uint8_t prf_key, long step_index, long row_length) {
         vec_ZZ result;
@@ -480,5 +628,108 @@ extern "C" {
             else result[i] = (val1[i] + val2[i] - mask[i] + q) % q; 
         }
         return result;
+    }
+
+    ZZ last_mul(const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data) {
+        vec_ZZ first_row = (*input_value)[0];
+        ZZ new_memory = first_row * memory_value;
+        vec_ZZ vec_mask = generate_PRF_mask(prf_key, step_index, data->p, 1);
+        ZZ mask = vec_mask[0];
+        return Round_ZZ(new_memory + mask, data);
+    }
+
+    ZZ_p last_mem_add(int b, const vec_ZZ& val1, const vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index) {
+        ZZ new_memory = val1[0] + val2[0];
+        vec_ZZ vec_mask = generate_PRF_mask(prf_key, step_index, data->p, 1);
+        ZZ mask = vec_mask[0];
+        if (b == 0) {
+            return conv<ZZ_p>(Round_ZZ(new_memory + mask, data));
+        } else {
+            return conv<ZZ_p>(Round_ZZ(new_memory - mask, data));
+        }
+    }
+
+    void benchmark_last_mul(const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data, int iterations) {
+        auto start = std::chrono::high_resolution_clock::now();
+        for (long i = 0; i < iterations; i++) {
+            last_mul(input_value, memory_value, prf_key, step_index, data);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+        std::cout << "Average time for last_mul: " << avg << " ms" << std::endl;
+    }
+
+    void benchmark_last_mem_add(int b, const vec_ZZ& val1, const vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index, int iterations) {
+        auto start = std::chrono::high_resolution_clock::now();
+        for (long i = 0; i < iterations; i++) {
+            last_mem_add(b, val1, val2, data, prf_key, step_index);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        double avg = (diff.count() / iterations) * 1000.0;
+        std::cout << "Average time for last_mem_add: " << avg << " ms" << std::endl;
+    }
+
+    void run_benchmark_last_mul(long n, long m, long q_len, long p_len, int iterations) {
+        ZZ p = RandomPrime_ZZ(p_len);
+        ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
+        ZZ q = p * q_div_by_p;
+        ZZ_p::init(q);
+        ZZ q_half = q / 2;
+        ZZ p_half = p / 2;
+
+        general_data data{n, m, q, p, q_half, p_half};
+        LWE_Keypair key = Gen("128", n, m);
+        
+        vec_ZZ_p s_0;
+        s_0.SetLength(n);
+        for (long i = 0; i < n; i++) random(s_0[i]);
+
+        Public_Key pk = generate_public_key(key, s_0);
+        ZZ_p message = conv<ZZ_p>(1);
+
+        mat_ZZ* input_matrix = OKDM(&data, &pk, message);
+
+        vec_ZZ memory_value;
+        memory_value.SetLength(n + 1);
+        for (long i = 0; i <= n; i++) memory_value[i] = RandomBnd(q);
+
+        long step_index = 1;
+
+        benchmark_last_mul(input_matrix, memory_value, pk.prf_key, step_index, &data, iterations);
+
+        free_OKDM_matrix(input_matrix);
+    }
+
+    void run_benchmark_last_mem_add(int b, long n, long m, long q_len, long p_len, int iterations) {
+        ZZ p = RandomPrime_ZZ(p_len);
+        ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
+        ZZ q = p * q_div_by_p;
+        ZZ_p::init(q);
+        ZZ q_half = q / 2;
+        ZZ p_half = p / 2;
+
+        general_data data{n, m, q, p, q_half, p_half};
+        LWE_Keypair key = Gen("128", n, m);
+        
+        vec_ZZ_p s_0;
+        s_0.SetLength(n);
+        for (long i = 0; i < n; i++) random(s_0[i]);
+
+        Public_Key pk = generate_public_key(key, s_0);
+        ZZ_p message = conv<ZZ_p>(1);
+
+        mat_ZZ* input_matrix = OKDM(&data, &pk, message);
+
+        vec_ZZ memory_value;
+        memory_value.SetLength(n + 1);
+        for (long i = 0; i <= n; i++) memory_value[i] = RandomBnd(q);
+
+        long step_index = 1;
+
+        benchmark_last_mem_add(b, memory_value, memory_value, &data, pk.prf_key, step_index, iterations);
+
+        free_OKDM_matrix(input_matrix);
     }
 }

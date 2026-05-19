@@ -14,44 +14,40 @@ from NTL_interfaces.ZZ_interface import (
     zz_add
 )
 import PRF.aes_prf as prf
+import NTL_interfaces.vec_mat_ZZ_interface as zz_vm
 
-
+PATH_TO_PARAMETERS = "../hss_parameters/lwe_parameters.txt"
 state = {}
 
-def Setup(n):
-    (pk, sk) = LWE.Gen(n, "0", "0") # need to be modified
-    n = len(n)
-    s_0 = vec_random(n)
-    s_1 = vec_sub(sk, s_0)
-    k_prf = int(zz_random(128))
-    ek_0 = (k_prf, s_0)
-    ek_1 = (k_prf, s_1)
-    state['zero_encrypted'] = LWE.Enc("0", pk)
-    return (pk, ek_0, ek_1)
+def read_parameters(n, Bmax):
+    with open(PATH_TO_PARAMETERS, 'r') as f:
+        for line in f:
+            if line.startswith('rop'):
+                continue
+            params = line.strip().split(',')
+            if int(params[0]) >= n and int(params[5]) >= Bmax:
+                state['lambda'] = n
+                state['Bmax'] = Bmax
+                state['q_len'] = int(params[2])
+                state['p_len'] = int(params[3])
+                state['n'] = int(params[1])
+                state['m'] = state['n'] * state['q_len']
+                return
+    raise ValueError(f"Parameters for lambda={n} and Bmax={Bmax} not found in {PATH_TO_PARAMETERS}")
 
-def Input(pk, x):
-    zero_encrypted = state.get("zero_encrypted")
-    p = state.get("p")
-    q = state.get("q")
-    return OKDM(x, zero_encrypted, p, q)
+def benchmark_Setup(n, Bmax=1, iterations=1000):
+    read_parameters(n, Bmax)
+    zz_vm.benchmark_ntl_setup(state['lambda'], state['n'], state['m'], state['q_len'], state['p_len'], iterations)
 
-def Load(b, ek, C, id):
-    """
-    Here C is the ciphertext of the input, represented as a dxd matrix
-    """
-    k_prf, s = ek
-    return vec_add_scalar(DDEC(C, s), str((1-2*int(b)) + int.from_bytes(prf.apply(k_prf.to_bytes(16, 'big'), id), 'big')))
+def benchmark_input(iterations=1000):
+    zz_vm.run_benchmark_OKDM(state['n'], state['m'], state['q_len'], state['p_len'], iterations)
+    
+def benchmark_load_or_mul(iterations=1000):
+    zz_vm.run_benchmark_DDEC(state['n'], state['m'], state['q_len'], state['p_len'], iterations)
+    
+def benchmark_last_mul(iterations=1000):
+    zz_vm.run_benchmark_last_mul(state['n'], state['m'], state['q_len'], state['p_len'], iterations)
 
-def Add_Inputs(b, ek, C1, C2, id):
-    return mat_add(C1, C2)
-
-def Add_Memory_Values(b, ek, m1, m2, id):
-    k_prf, _ = ek
-    return vec_add_scalar(vec_add(m1, m2), str((1-2*int(b)) + int.from_bytes(prf.apply(k_prf.to_bytes(16, 'big'), id), 'big')))
-
-def Mul(b, ek, C, m, id):
-    k_prf, _ = ek
-    return vec_add_scalar(DDEC(C, m), str((1-2*int(b)) + int.from_bytes(prf.apply(k_prf.to_bytes(16, 'big'), id), 'big')))
-
-def Output(b, ek, m, r, id):
-    pass
+def benchmark_last_mem_add(iterations=1000):
+    b = 0
+    zz_vm.run_benchmark_last_mem_add(b, state['n'], state['q_len'], state['p_len'], iterations)

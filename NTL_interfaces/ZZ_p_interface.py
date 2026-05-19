@@ -15,7 +15,7 @@ ffi.cdef("""
         int zz_p_eq(const char* a, const char* b);
 """)
 
-lib = ffi.dlopen("./libntl_wrappers.so")
+lib = ffi.dlopen("/home/roee/HSS-Comparator/libntl_wrappers.so")
 
 def zz_p_init(s: str) -> None:
     """Set the modulus for next operations."""
