@@ -25,7 +25,7 @@ ffi.cdef("""
         char* zz_random_smaller_than_n(const char* n);
 """)
 
-lib = ffi.dlopen("./libntl_wrappers.so")
+lib = ffi.dlopen("/home/roee/HSS-Comparator/libntl_wrappers.so")
 
 def free_string(s: str) -> None:
     """Free a string allocated by the C library."""

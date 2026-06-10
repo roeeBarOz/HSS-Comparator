@@ -3,7 +3,7 @@ from ctypes import c_uint8, c_uint64, POINTER, cdll
 import os
 
 # Load the compiled shared library
-lib = cdll.LoadLibrary('./aesni_ctr.so')
+lib = cdll.LoadLibrary('/home/roee/HSS-Comparator/aesni_ctr.so')
 
 # Define the function prototype
 lib.aesni_ctr_encrypt.argtypes = [

@@ -1,36 +1,35 @@
-# Compiler and flags
-CXX = g++
-CXXFLAGS = -O2 -fPIC -Wall -std=c++11
+CXX      := g++
+CXXFLAGS := -O3 -march=native -fPIC -Wall -std=c++11 -MMD -MP -g
 
-# Directories
-SRC_DIR = NTL_wrappers
-BUILD_DIR = build
+# Linker Magic: Point to the PRF directory for run-time loading
+LDFLAGS  := -shared -Wl,-rpath='$$ORIGIN/PRF'
+LDLIBS   := -lntl -lgmp -lm
 
-# Libraries to link
-LIBS = -lntl -lgmp
+SRC_DIR   := NTL_wrappers
+BUILD_DIR := build
+TARGET    := libntl_wrappers.so
 
-# Output shared library
-TARGET = libntl_wrappers.so
+# The existing bare-metal AES binary
+AES_SO    := /home/roee/HSS-Comparator/aesni_ctr.so
 
-# Source and object files
-SRCS = $(wildcard $(SRC_DIR)/*.cpp)
-OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SRCS))
+SRCS      := $(wildcard $(SRC_DIR)/*.cpp)
+OBJS      := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+DEPS      := $(OBJS:.o=.d)
 
-# Default target
+.PHONY: all clean
+
 all: $(TARGET)
 
-# Create build directory if needed
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+$(TARGET): $(OBJS)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(AES_SO) $(LDLIBS)
 
-# Build object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Link shared library
-$(TARGET): $(OBJS)
-	$(CXX) -shared $^ -o $@ $(LIBS)
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
-# Clean
 clean:
-	rm -rf $(BUILD_DIR) *.so
+	rm -rf $(BUILD_DIR) $(TARGET)
+
+-include $(DEPS)
