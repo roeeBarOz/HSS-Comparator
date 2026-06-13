@@ -41,9 +41,9 @@ extern "C" {
     NTL::ZZ Round_ZZ(const NTL::ZZ& x_q, general_data* data);
     void benchmark_ntl_mul(long size, long iterations, const char* p_str);    
     void benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
-    void benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times);
+    void benchmark_ntl_setup(long n, long m, long Bmsg_length, long P_size, long times);
     Public_Key generate_public_key(const LWE_Keypair& key, const NTL::vec_ZZ_p& s_share);     
-    void Setup(const char* lambda, long n, long m, long q_length, long p_length);
+    void Setup(const char* lambda, long n, long m, long Bmsg_length, long P_size);
     NTL::ZZ_p generate_A_ij(const uint8_t* seed, long i, long j);
     void generate_A_row(const uint8_t* seed, long row_i, long num_cols, NTL::vec_ZZ& output_row, std::vector<uint8_t>& plaintext, std::vector<uint8_t>& ciphertext, NTL::ZZ& temp, const NTL::ZZ& q);
     NTL::vec_ZZ_p generate_sparse_ternary_vec(long length, long hw);

@@ -155,13 +155,13 @@ extern "C" {
         delete[] buffer;
     }
 
-    void benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times) {
+    void benchmark_ntl_setup(long n, long m, long Bmsg_length, long P_size, long times) {
         char* lambda;
         string lambda_str = "128"; // Example security parameter, can be modified as needed
         lambda = strdup(lambda_str.c_str());
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < times; i++) {
-            Setup(lambda, n, m, q_length, p_length);
+            Setup(lambda, n, m, Bmsg_length, P_size);
         }
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
@@ -178,7 +178,11 @@ extern "C" {
         return pk;
     }
 
-    void Setup(const char* lambda, long n, long m, long q_length, long p_length) {
+    void Setup(const char* lambda, long n, long m, long Bmsg_length, long P_size) {
+        long p_length, q_length, log_n;
+        log_n = ceil(log2(n));
+        p_length = P_size + log_n + Bmsg_length + 42;
+        q_length =  P_size + log_n + Bmsg_length + 3 + p_length + 42;
         ZZ* p = new ZZ(INIT_SIZE, p_length);
         RandomPrime(*p, p_length, 100);
         ZZ* q_divided_by_p = new ZZ(INIT_SIZE, q_length - p_length);
