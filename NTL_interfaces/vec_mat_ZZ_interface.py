@@ -6,8 +6,8 @@ ffi.cdef("""
     void free_vec_mat_string(char* str);
     void benchmark_ntl_mul(long size, long iterations, const char* p_str);    
     void benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
-    void benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times);
-    void Setup(const char* lambda, long n, long m, long q_length, long p_length);
+    void benchmark_ntl_setup(long n, long m, long Bmsg_length, long P_size, long times);
+    void Setup(const char* lambda, long n, long m, long Bmsg_length, long P_size);
     void run_benchmark_OKDM(long n, long m, const char* q_str, int iterations);
     void run_benchmark_DDEC(long n, long m, const char* q_str, const char* p_str, int iterations);
     void benchmark_ntl_gen_okdm_chunk(const uint8_t* seed_A, const char* b, const char* message,
@@ -58,20 +58,20 @@ def benchmark_ntl_add_mat(size: int, iterations: int, p_str: str):
     """
     return _wrap_op_no_ret(lib.benchmark_ntl_add_mat, size, iterations, p_str)
 
-def benchmark_ntl_setup(n: int, m: int, q_length: int, p_length: int, times: int):
+def benchmark_ntl_setup(n: int, m: int, Bmsg_length: int, P_size: int, times: int):
     """
     Benchmark NTL LWE-setup for given parameters.
     
     Parameters:
         n: The dimension of the secret vector, and the number of columns in the matrix A.
         m: The number of rows in the matrix A.
-        q_length: The bit-length of the modulus q.
-        p_length: The bit-length of the modulus p.
+        Bmsg_length: The bit-length of the message.
+        P_size: The size of the polynomial.
         times: The number of times to repeat the setup for benchmarking.
     """
-    return _wrap_op_no_ret(lib.benchmark_ntl_setup, n, m, q_length, p_length, times)
+    return _wrap_op_no_ret(lib.benchmark_ntl_setup, n, m, Bmsg_length, P_size, times)
 
-def Setup(lambda_str: str, n: int, m: int, q_length: int, p_length: int):
+def Setup(lambda_str: str, n: int, m: int, Bmsg_length: int, P_size: int):
     """
     LWE-Setup NTL for given parameters.
     
@@ -79,10 +79,10 @@ def Setup(lambda_str: str, n: int, m: int, q_length: int, p_length: int):
         lambda_str: The security parameter as a string (e.g., "128").
         n: The dimension of the secret vector, and the number of columns in the matrix A.
         m: The number of rows in the matrix A.
-        q_length: The bit-length of the modulus q.
-        p_length: The bit-length of the modulus p.
+        Bmsg_length: The bit-length of the message.
+        P_size: The size of the polynomial.
     """
-    return _wrap_op_no_ret(lib.Setup, lambda_str, n, m, q_length, p_length)
+    return _wrap_op_no_ret(lib.Setup, lambda_str, n, m, Bmsg_length, P_size)
 
 def run_benchmark_OKDM(n: int, m: int, q_len: str, iterations: int):
     """
