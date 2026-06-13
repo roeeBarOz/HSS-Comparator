@@ -1,3 +1,5 @@
+from math import log2
+
 import Encryptions.Paillier as Paillier
 from NTL_interfaces.ZZ_interface import (
     zz_add,
@@ -20,17 +22,17 @@ import PRF.aes_prf as prf
 
 state = {}
 
-def Setup(n):
-    pk_paillier, sk = Paillier.Gen(n)
+def Setup(security_parameter, Bmsg_length, num_of_mults):
+    pk_paillier, sk = Paillier.Gen(security_parameter)
     N, g = pk_paillier
     state['N'] = N
     l, _ = sk
-    n = str(len(n))
-    kappa = zz_div(zz_mul(n, "2"), "3") # as n refers to the length of p, q, and not the length of N=p*q.
+    # Bmsg should be lower that N/(Bsk*2^kappa)
+    kappa = 40 * log2(num_of_mults) # the correctness parameter of the share conversion from Z_N to Z.
     state['kappa'] = kappa
-    Bmsg = zz_pow("2", kappa)
+    Bmsg = zz_pow("2", Bmsg_length)
     state['Bmsg'] = Bmsg
-    Bsk = zz_div(N, zz_pow(Bmsg, "2"))
+    Bsk = zz_div(N, zz_mul(Bmsg, zz_pow("2", kappa)))
     state['Bsk'] = Bsk
     d = []
     while(l != "0"):
