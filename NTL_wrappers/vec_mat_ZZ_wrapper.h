@@ -39,11 +39,11 @@ extern "C" {
     // --- HSS-specific Operations ---
     NTL::vec_ZZ generate_gaussian_vec(long length, long k);
     NTL::ZZ Round_ZZ(const NTL::ZZ& x_q, general_data* data);
-    void benchmark_ntl_mul(long size, long iterations, const char* p_str);    
-    void benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
-    void benchmark_ntl_setup(long n, long m, long Bmsg_length, long P_size, long times);
+    double benchmark_ntl_mul(long size, long iterations, const char* p_str);    
+    double benchmark_ntl_add_mat(long size, long iterations, const char* p_str);
+    double benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times);
     Public_Key generate_public_key(const LWE_Keypair& key, const NTL::vec_ZZ_p& s_share);     
-    void Setup(const char* lambda, long n, long m, long Bmsg_length, long P_size);
+    void Setup(const char* lambda, long n, long m, long q_length, long p_length);
     NTL::ZZ_p generate_A_ij(const uint8_t* seed, long i, long j);
     void generate_A_row(const uint8_t* seed, long row_i, long num_cols, NTL::vec_ZZ& output_row, std::vector<uint8_t>& plaintext, std::vector<uint8_t>& ciphertext, NTL::ZZ& temp, const NTL::ZZ& q);
     NTL::vec_ZZ_p generate_sparse_ternary_vec(long length, long hw);
@@ -52,24 +52,23 @@ extern "C" {
     NTL::mat_ZZ* OKDM(general_data* data, Public_Key* pk, const NTL::ZZ_p& message);
     void free_OKDM_matrix(NTL::mat_ZZ* matrix);
     NTL::vec_ZZ DDEC(const NTL::mat_ZZ* input_value, const NTL::vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data);
-    void run_benchmark_OKDM(long n, long m, long q_len, long p_len, int iterations);
-    void run_benchmark_DDEC(long n, long m, long q_len, long p_len, int iterations);
-    void benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const NTL::ZZ_p& message);
-    void benchmark_DDEC(int iterations, const NTL::mat_ZZ* input_value, const NTL::vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data);
-    void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
+    double run_benchmark_OKDM(long n, long m, long q_len, long p_len, int iterations);
+    double run_benchmark_DDEC(long n, long m, long q_len, long p_len, int iterations);
+    double benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const NTL::ZZ_p& message);
+    double benchmark_DDEC(int iterations, const NTL::mat_ZZ* input_value, const NTL::vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data);
+    double benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
                          const uint8_t prf_key, long step_index, long row_length, long iterations);
     NTL::vec_ZZ add_memory_values(int b, const NTL::vec_ZZ& val1, const NTL::vec_ZZ& val2,
                          const NTL::ZZ& q, const uint8_t prf_key, long step_index, long row_length);
 
 
     NTL::ZZ last_mul(const NTL::mat_ZZ* input_value, const NTL::vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data);
-    void benchmark_last_mul(const NTL::mat_ZZ* input_value, const NTL::vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data, int iterations);
+    double benchmark_last_mul(const NTL::mat_ZZ* input_value, const NTL::vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data, int iterations);
     NTL::ZZ_p last_mem_add(int b, const NTL::vec_ZZ& val1, const NTL::vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index);
-    void benchmark_last_mem_add(int b, const NTL::vec_ZZ& val1, const NTL::vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index, int iterations);
-    void run_benchmark_last_mul(long n, long m, long q_len, long p_len, int iterations);
-    void run_benchmark_last_mem_add(int b, long n, long m, long q_len, long p_len, int iterations);
-    void run_benchmark_add_memory_values(long n, long m, long q_len, long p_len, int iterations);
-
+    double benchmark_last_mem_add(int b, const NTL::vec_ZZ& val1, const NTL::vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index, int iterations);
+    double run_benchmark_last_mul(long n, long m, long q_len, long p_len, int iterations);
+    double run_benchmark_last_mem_add(int b, long n, long m, long q_len, long p_len, int iterations);
+    double benchmark_mem_add(int b, long n, long m, long q_len, long p_len, long Bmax, int iterations);
 #ifdef __cplusplus
 }
 

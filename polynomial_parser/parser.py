@@ -1,133 +1,129 @@
 import sympy as sp
 import math
 
-def build_binary_tasks(expr, result_var, task_list, counter):
-    """
-    מפרקת ביטויים ארוכים לפעולות בינאריות (עץ מאוזן) לאפשור מקבול מרבי.
-    """
-    if isinstance(expr, sp.Symbol) or isinstance(expr, sp.Number): 
-        return expr
-        
-    processed_args = [build_binary_tasks(arg, None, task_list, counter) for arg in expr.args]
+from polynomial_parser.data import Plan_Step, Static_Data, Plan, Op_Counts
 
-    if len(processed_args) <= 2:
-        task_list[result_var or f"t_{counter[0]}"] = {'op': type(expr).__name__, 'args': processed_args}
-        name = result_var or f"t_{counter[0]}"
-        counter[0] += 1
-        return sp.Symbol(name)
-    
-    while len(processed_args) > 1:
-        next_level = []
-        for i in range(0, len(processed_args), 2):
-            if i + 1 < len(processed_args):
-                temp_var = f"t_{counter[0]}"
-                counter[0] += 1
-                task_list[temp_var] = {'op': type(expr).__name__, 'args': [processed_args[i], processed_args[i+1]]}
-                next_level.append(sp.Symbol(temp_var))
-            else:
-                next_level.append(processed_args[i])
-        processed_args = next_level
+def get_max_bit_size(expr, var_sizes):
+    if isinstance(expr, sp.Symbol): return var_sizes.get(str(expr), var_sizes.get('default', 8))
+    elif isinstance(expr, sp.Number):
+        val = abs(float(expr))
+        return 1 if val == 0 else math.floor(math.log2(val)) + 1
+    elif isinstance(expr, sp.Add):
+        arg_sizes = [get_max_bit_size(arg, var_sizes) for arg in expr.args]
+        return max(arg_sizes) + math.ceil(math.log2(len(arg_sizes)))
+    elif isinstance(expr, sp.Mul):
+        return sum(get_max_bit_size(arg, var_sizes) for arg in expr.args)
+    elif isinstance(expr, sp.Pow):
+        base, exp = expr.args
+        if isinstance(exp, sp.Number) and exp > 0:
+            return get_max_bit_size(base, var_sizes) * int(exp)
+    return var_sizes.get('default', 8)
 
-    final_temp = processed_args[0].name
-    task_list[result_var or f"t_{counter[0]}"] = task_list.pop(final_temp)
-    if not result_var: 
-        counter[0] += 1
-    return sp.Symbol(result_var or final_temp)
-
-def analyze_and_schedule(poly_str, num_processors):
-    """
-    מנתחת את הפולינום, מבצעת אופטימיזציה אלגברית, CSE ותזמון לחומרה.
-    """
+def analyze_and_schedule(poly_str, num_processors, var_sizes):
     try:
         parsed_poly = sp.sympify(poly_str)
-        optimized_poly = sp.factor(parsed_poly)
-        reduced_exprs, final_expr = sp.cse(optimized_poly)
+        expanded_poly = sp.expand(parsed_poly)
+        
+        # 1. חילוץ נתונים סטטיים בסיסיים
+        free_symbols = expanded_poly.free_symbols
+        num_unique_inputs = len(free_symbols)
+        max_bit_size = get_max_bit_size(expanded_poly, var_sizes)
         
         tasks = {}
         counter = [1]
-        
-        for var, expr in reduced_exprs:
-            build_binary_tasks(expr, str(var), tasks, counter)
-        build_binary_tasks(final_expr[0], "Final_Result", tasks, counter)
+        def new_var():
+            name = f"t_{counter[0]}"; counter[0] += 1; return name
 
-        depths = {}
-        def get_depth(arg):
-            if isinstance(arg, sp.Number): return 0
-            return depths.get(str(arg), 0)
+        # בניית המשימות לפי מגבלות הארכיטקטורה (כפל קלט בזיכרון בלבד)
+        def build_multiplication_chain(expr):
+            if isinstance(expr, sp.Symbol):
+                mem_var = new_var()
+                tasks[mem_var] = {'op': 'To_Memory', 'args': [expr]}
+                return mem_var
+            elif isinstance(expr, sp.Mul):
+                args = list(expr.args)
+                secrets = [a for a in args if not isinstance(a, sp.Number)]
+                if not secrets: return None
+                current_mem = new_var()
+                tasks[current_mem] = {'op': 'To_Memory', 'args': [secrets[0]]}
+                for secret in secrets[1:]:
+                    next_mem = new_var()
+                    tasks[next_mem] = {'op': 'Mul_In_Mem', 'args': [secret, current_mem]}
+                    current_mem = next_mem
+                return current_mem
 
-        for task_name, task_info in tasks.items():
-            op = task_info['op']
-            args = task_info['args']
-            max_arg_depth = max((get_depth(arg) for arg in args), default=0)
+        term_results = []
+        if isinstance(expanded_poly, sp.Add):
+            for term in expanded_poly.args:
+                res = build_multiplication_chain(term)
+                if res: term_results.append(res)
+        else:
+            res = build_multiplication_chain(expanded_poly)
+            if res: term_results.append(res)
 
-            if op == 'Mul':
-                if any(isinstance(arg, sp.Number) for arg in args):
-                    depths[task_name] = max_arg_depth
+        while len(term_results) > 1:
+            next_level = []
+            for i in range(0, len(term_results), 2):
+                if i + 1 < len(term_results):
+                    sum_mem = new_var()
+                    tasks[sum_mem] = {'op': 'Add_Memory', 'args': [term_results[i], term_results[i+1]]}
+                    next_level.append(sum_mem)
                 else:
-                    depths[task_name] = max_arg_depth + 1
-            elif op == 'Pow':
-                base, exp = args
-                if isinstance(exp, sp.Number) and exp > 0:
-                    depths[task_name] = get_depth(base) + math.ceil(math.log2(float(exp)))
-                else:
-                    depths[task_name] = max_arg_depth
-            else:
-                depths[task_name] = max_arg_depth
+                    next_level.append(term_results[i])
+            term_results = next_level
 
-        mult_depth = depths.get("Final_Result", 0)
-
-        available_vars = set()
-        for task in tasks.values():
-            for arg in task['args']:
-                if str(arg) not in tasks:
-                    available_vars.add(str(arg))
-
+        # 2. תזמון המשימות לליבות וספירת פעולות (ללא זמנים)
+        available_vars = set([str(s) for s in free_symbols])
         pending_tasks = set(tasks.keys())
+        execution_plan = Plan()
         cycle = 1
-        execution_plan = []
-        hss_multiplication_cycles = 0 
+        
+        op_counts = Op_Counts()
 
         while pending_tasks:
             ready_queue = []
             for task_name in pending_tasks:
-                dependencies = [str(arg) for arg in tasks[task_name]['args'] if isinstance(arg, sp.Symbol)]
-                if all(dep in available_vars for dep in dependencies):
-                    ready_queue.append(task_name)
+                dependencies = [str(arg) for arg in tasks[task_name]['args'] if isinstance(arg, sp.Symbol) or type(arg)==str]
+                if all(dep in available_vars for dep in dependencies): ready_queue.append(task_name)
             
             ready_queue.sort()
             tasks_this_cycle = ready_queue[:num_processors]
             if not tasks_this_cycle: break 
                 
             plan_step = []
-            cycle_has_heavy_mul = False 
-            
             for idx, task_name in enumerate(tasks_this_cycle):
                 task_info = tasks[task_name]
                 op = task_info['op']
-                args = task_info['args']
+                plan_step.append(Plan_Step(core_idx=idx+1, task_name=task_name, op=op, args=task_info['args']))   
+                             
+                if op == 'To_Memory': op_counts.increment_to_mem()
+                elif op == 'Mul_In_Mem': op_counts.increment_muls()
+                elif op == 'Add_Memory': op_counts.increment_add_mems()
                 
-                if op == 'Mul':
-                    vars_count = sum(1 for arg in args if not isinstance(arg, sp.Number))
-                    if vars_count > 1: cycle_has_heavy_mul = True
-                elif op == 'Pow':
-                    cycle_has_heavy_mul = True
-                    
-                args_str = ", ".join(str(arg) for arg in args)
-                plan_step.append(f"Core {idx+1}: {task_name} = {op}({args_str})")
                 pending_tasks.remove(task_name)
             
-            execution_plan.append((cycle, plan_step))
-            if cycle_has_heavy_mul: hss_multiplication_cycles += 1
+            execution_plan.add_step(cycle, plan_step)
             for task_name in tasks_this_cycle: available_vars.add(task_name)
             cycle += 1
 
-        return {
-            'success': True, 
-            'plan': execution_plan, 
-            'total_cycles': len(execution_plan), 
-            'hss_muls': hss_multiplication_cycles, 
-            'depth': mult_depth, 
-            'optimized': str(optimized_poly)
-        }
+        # מחזירים רק נתונים יבשים לאתר
+        return Static_Data(
+            success=True,
+            optimized_poly=str(expanded_poly),
+            plan=execution_plan,
+            plan_len=len(execution_plan),
+            num_unique_inputs=num_unique_inputs,
+            max_bit_size=max_bit_size,
+            op_counts=op_counts
+        )
+
     except Exception as e:
-        return {'success': False, 'error': str(e)}
+        return Static_Data(
+            success=False,
+            optimized_poly=None,
+            plan=None,
+            plan_len=0,
+            num_unique_inputs=0,
+            max_bit_size=0,
+            op_counts=None
+        )

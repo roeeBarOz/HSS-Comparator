@@ -1,3 +1,4 @@
+#include <NTL/ZZ.h>
 #include <NTL/vec_ZZ.h>
 #include <NTL/mat_ZZ.h>
 #include <NTL/vec_ZZ_p.h>
@@ -88,7 +89,7 @@ extern "C" {
         return centered_mod_ZZ(rounded_val, data);
     }
 
-    void benchmark_ntl_mul(long size, long iterations, const char* p_str) {
+    double benchmark_ntl_mul(long size, long iterations, const char* p_str) {
         NTL::ZZ p = NTL::to_ZZ(p_str);
         NTL::ZZ_p::init(p);
 
@@ -101,7 +102,6 @@ extern "C" {
             NTL::random(vectors[i], size);
         }
 
-        std::cout << "Starting benchmark for " << iterations << " iterations..." << std::endl;
         int item_size = get_modulus_byte_length();
         unsigned char* buffer = new unsigned char[size * item_size];
 
@@ -116,12 +116,11 @@ extern "C" {
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / iterations) * 1000.0;
 
-        std::cout << "Total time: " << diff.count() << " seconds" << std::endl;
-        std::cout << "Average time per multiplication: " << avg << " ms" << std::endl;
         delete[] buffer;
+        return avg;
     }
 
-    void benchmark_ntl_add_mat(long size, long iterations, const char* p_str) {
+    double benchmark_ntl_add_mat(long size, long iterations, const char* p_str) {
         NTL::ZZ p = NTL::to_ZZ(p_str);
         NTL::ZZ_p::init(p);
 
@@ -133,8 +132,6 @@ extern "C" {
             NTL::random(matricesA[i], size, size);
             NTL::random(matricesB[i], size, size);
         }
-
-        std::cout << "Starting benchmark for " << iterations << " iterations..." << std::endl;
 
         int item_size = get_modulus_byte_length();
         unsigned char* buffer = new unsigned char[size * size * item_size];
@@ -150,23 +147,22 @@ extern "C" {
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / iterations) * 1000.0;
 
-        std::cout << "Total time: " << diff.count() << " seconds" << std::endl;
-        std::cout << "Average time per addition: " << avg << " ms" << std::endl;
         delete[] buffer;
+        return avg;
     }
 
-    void benchmark_ntl_setup(long n, long m, long Bmsg_length, long P_size, long times) {
+    double benchmark_ntl_setup(long n, long m, long q_length, long p_length, long times) {
         char* lambda;
         string lambda_str = "128"; // Example security parameter, can be modified as needed
         lambda = strdup(lambda_str.c_str());
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < times; i++) {
-            Setup(lambda, n, m, Bmsg_length, P_size);
+            Setup(lambda, n, m, q_length, p_length);
         }
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / times) * 1000.0;
-        std::cout << "Average time per Setup: " << avg << " ms" << std::endl;
+        return avg;
     }
 
     Public_Key generate_public_key(const LWE_Keypair& key, const vec_ZZ_p& s_share) {
@@ -178,11 +174,8 @@ extern "C" {
         return pk;
     }
 
-    void Setup(const char* lambda, long n, long m, long Bmsg_length, long P_size) {
-        long p_length, q_length, log_n;
-        log_n = ceil(log2(n));
-        p_length = P_size + log_n + Bmsg_length + 42;
-        q_length =  P_size + log_n + Bmsg_length + 3 + p_length + 42;
+    void Setup(const char* lambda, long n, long m, long q_length, long p_length) {
+        
         ZZ* p = new ZZ(INIT_SIZE, p_length);
         RandomPrime(*p, p_length, 100);
         ZZ* q_divided_by_p = new ZZ(INIT_SIZE, q_length - p_length);
@@ -490,7 +483,7 @@ extern "C" {
     }
 
     // Wrapper to set up the data and run the OKDM benchmark
-    void run_benchmark_OKDM(long n, long m, long q_len, long p_len, int iterations) {
+    double run_benchmark_OKDM(long n, long m, long q_len, long p_len, int iterations) {
         // 1. Initialize the global modulus
         ZZ p = RandomPrime_ZZ(p_len);
         ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
@@ -512,15 +505,15 @@ extern "C" {
         ZZ_p message = conv<ZZ_p>(1); // Dummy message for benchmarking
 
         // 3. Run the core benchmark
-        std::cout << "Starting OKDM Benchmark for " << iterations << " iterations..." << std::endl;
-        benchmark_OKDM(iterations, data, &pk, message);
+        double avg = benchmark_OKDM(iterations, data, &pk, message);
 
         // 4. Cleanup heap memory
         delete data;
+        return avg;
     }
 
     // Wrapper to set up the data, generate a test matrix, and run the DDEC benchmark
-    void run_benchmark_DDEC(long n, long m, long q_len, long p_len, int iterations) {
+    double run_benchmark_DDEC(long n, long m, long q_len, long p_len, int iterations) {
         // 1. Initialize the global modulus
         ZZ p = RandomPrime_ZZ(p_len);
         ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
@@ -541,7 +534,7 @@ extern "C" {
         ZZ_p message = conv<ZZ_p>(1);
 
         // 3. Generate a single OKDM matrix to serve as the benchmark input
-        std::cout << "Preparing 1 OKDM Matrix for DDEC Benchmark evaluation..." << std::endl;
+
         mat_ZZ* input_matrix = OKDM(&data, &pk, message);
 
         // 4. Generate a dummy memory state vector for the Server
@@ -552,14 +545,15 @@ extern "C" {
         long step_index = 1;
 
         // 5. Run the core benchmark
-        std::cout << "Starting DDEC Benchmark for " << iterations << " iterations..." << std::endl;
-        benchmark_DDEC(iterations, input_matrix, memory_value, pk.prf_key, step_index, &data);
+
+        double avg = benchmark_DDEC(iterations, input_matrix, memory_value, pk.prf_key, step_index, &data);
 
         // 6. Cleanup heap memory
         free_OKDM_matrix(input_matrix);
+        return avg;
     }
 
-    void benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const ZZ_p& message) {
+    double benchmark_OKDM(int iterations, general_data* data, Public_Key* pk, const ZZ_p& message) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
             mat_ZZ* okdm_matrix = OKDM(data, pk, message);
@@ -568,10 +562,11 @@ extern "C" {
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / iterations) * 1000.0;
-        std::cout << "Average time per OKDM: " << avg << " ms" << std::endl;
+
+        return avg;
     }
 
-    void benchmark_DDEC(int iterations, const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data) {
+    double benchmark_DDEC(int iterations, const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
             DDEC(input_value, memory_value, prf_key, step_index, data);
@@ -579,46 +574,53 @@ extern "C" {
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / iterations) * 1000.0;
-        std::cout << "Average time per DDEC: " << avg << " ms" << std::endl;
-    }
 
-    void benchmark_ntl_add_memory_values(int b, const char* val1, const char* val2, const char* q,
-                            const uint8_t prf_key, long step_index, long row_length, long iterations) {
-        auto start = std::chrono::high_resolution_clock::now();
-        vec_ZZ vec_val1, vec_val2;
-        from_cstring(vec_val1, val1);
-        from_cstring(vec_val2, val2);
-        ZZ q_zz;        
-        from_cstring(q_zz, q);
-        for (long i = 0; i < iterations; i++) {
-            add_memory_values(b, vec_val1, vec_val2, q_zz, prf_key, step_index, row_length);
-        }
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> diff = end - start;
-        double avg = (diff.count() / iterations) * 1000.0;
-        std::cout << "Average time per add_memory_values: " << avg << " ms" << std::endl;
+        return avg;
     }
-
-    void run_benchmark_add_memory_values(long n, long m, long q_len, long p_len, int iterations) {
+    
+    double benchmark_mem_add(int b, long n, long m, long q_len, long p_len, long Bmax, int iterations) {
+        
+        // 1. Initialize the global modulus
         ZZ p = RandomPrime_ZZ(p_len);
         ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
-        ZZ q = p * q_div_by_p;
-        LWE_Keypair key = Gen("128", n, m);
+        ZZ q = q_div_by_p * p;
+        ZZ_p::init(q);
+        ZZ q_half = q / 2;
+        ZZ p_half = p / 2;
+
         vec_ZZ val1, val2;
-        val1.SetLength(n);
-        val2.SetLength(n);
-        for (long i = 0; i < n; i++) {
-            val1[i] = RandomBnd(q);
-            val2[i] = RandomBnd(q);
+        val1.SetLength(n+1);
+        val2.SetLength(n+1);
+        
+        for (long i = 0; i <= n; i++) {
+            RandomBits(val1[i], Bmax - 1);
+            RandomBits(val2[i], Bmax - 1);
         }
-        vec_ZZ_p s_0;
-        s_0.SetLength(n);
-        for (long i = 0; i < n; i++) random(s_0[i]);
-
-        Public_Key pk = generate_public_key(key, s_0);
-
-        long step_index = 1;
-        benchmark_ntl_add_memory_values(0, to_cstring(val1), to_cstring(val2), to_cstring(q), *(pk.prf_key), step_index, n, iterations);
+        
+        uint8_t prf_key[16];
+        for (int i = 0; i < 16; i++) {
+            prf_key[i] = rand() % 256; // ללא קאסטינג מיותר
+        }
+        
+        vec_ZZ output;
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        for (long i = 0; i < iterations; i++) {
+            // הוסר הכוכבית מ-prf_key כדי להעביר את המצביע למערך כולו
+            output = add_memory_values(b, val1, val2, q, *prf_key, 0, n+1);
+            
+            // NTL מנהלת זיכרון בעצמה, אבל אם רוצים לוודא ניקוי אגרסיבי:
+            output.kill(); 
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        
+        // חישוב הממוצע לאיטרציה אחת במילי-שניות
+        double avg = (diff.count() / iterations) * 1000.0;
+        
+        return avg;
     }
 
     vec_ZZ add_memory_values(int b, const vec_ZZ& val1, const vec_ZZ& val2, const ZZ& q,
@@ -653,7 +655,7 @@ extern "C" {
         }
     }
 
-    void benchmark_last_mul(const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data, int iterations) {
+    double benchmark_last_mul(const mat_ZZ* input_value, const vec_ZZ& memory_value, const uint8_t* prf_key, long step_index, general_data* data, int iterations) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
             last_mul(input_value, memory_value, prf_key, step_index, data);
@@ -661,10 +663,10 @@ extern "C" {
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / iterations) * 1000.0;
-        std::cout << "Average time for last_mul: " << avg << " ms" << std::endl;
+        return avg;
     }
 
-    void benchmark_last_mem_add(int b, const vec_ZZ& val1, const vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index, int iterations) {
+    double benchmark_last_mem_add(int b, const vec_ZZ& val1, const vec_ZZ& val2, general_data* data, const uint8_t* prf_key, long step_index, int iterations) {
         auto start = std::chrono::high_resolution_clock::now();
         for (long i = 0; i < iterations; i++) {
             last_mem_add(b, val1, val2, data, prf_key, step_index);
@@ -672,10 +674,10 @@ extern "C" {
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
         double avg = (diff.count() / iterations) * 1000.0;
-        std::cout << "Average time for last_mem_add: " << avg << " ms" << std::endl;
+        return avg;
     }
 
-    void run_benchmark_last_mul(long n, long m, long q_len, long p_len, int iterations) {
+    double run_benchmark_last_mul(long n, long m, long q_len, long p_len, int iterations) {
         ZZ p = RandomPrime_ZZ(p_len);
         ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
         ZZ q = p * q_div_by_p;
@@ -701,12 +703,13 @@ extern "C" {
 
         long step_index = 1;
 
-        benchmark_last_mul(input_matrix, memory_value, pk.prf_key, step_index, &data, iterations);
+        double avg = benchmark_last_mul(input_matrix, memory_value, pk.prf_key, step_index, &data, iterations);
 
         free_OKDM_matrix(input_matrix);
+        return avg;
     }
 
-    void run_benchmark_last_mem_add(int b, long n, long m, long q_len, long p_len, int iterations) {
+    double run_benchmark_last_mem_add(int b, long n, long m, long q_len, long p_len, int iterations) {
         ZZ p = RandomPrime_ZZ(p_len);
         ZZ q_div_by_p = RandomPrime_ZZ(q_len - p_len);
         ZZ q = p * q_div_by_p;
@@ -732,8 +735,9 @@ extern "C" {
 
         long step_index = 1;
 
-        benchmark_last_mem_add(b, memory_value, memory_value, &data, pk.prf_key, step_index, iterations);
+        double avg = benchmark_last_mem_add(b, memory_value, memory_value, &data, pk.prf_key, step_index, iterations);
 
         free_OKDM_matrix(input_matrix);
+        return avg;
     }
 }
