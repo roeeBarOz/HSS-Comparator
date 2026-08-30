@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <sstream>
 #include "quetient_ring_wrapper.h"
+#include "../PRF/aesni_ctr.c"
 
 using namespace NTL;
 
@@ -162,6 +163,46 @@ extern "C" {
         }
     }
 
+    void apply_prf(const ZZ key, ZZ_pE& output) {
+        // Convert the key to a 16-byte array for AES
+        uint8_t aes_key[16];
+        for (int i = 0; i < 16; ++i) {
+            aes_key[i] = conv<uint8_t>((key >> (8 * i)) & 0xFF);
+        }
+
+        // Use a fixed nonce for simplicity; in practice, this should be unique per invocation
+        uint8_t nonce[8] = {0}; // 64-bit nonce initialized to zero
+
+        // Prepare the output buffer for the keystream
+        uint8_t keystream[16]; // AES block size is 16 bytes
+
+        // Generate the keystream using AES-CTR mode
+        aesni_ctr_encrypt(aes_key, nonce, keystream, keystream, 16);
+
+        // Convert the generated keystream into a polynomial in ZZ_pE
+        ZZ_pX poly;
+        for (int i = 0; i < 16; ++i) {
+            SetCoeff(poly, i, to_ZZ_p(keystream[i]));
+        }
+        
+        output = conv<ZZ_pE>(poly);
+    }
+
+    void PRF(int b, const ZZ key, Memory_Value& mem) {
+        ZZ_pE p0, p1;
+        apply_prf(key, p0);
+        apply_prf(key, p1);
+
+        if (b == 0) {
+            mem.mem_0 += p0;
+            mem.mem_1 += p1;
+        } else {
+            mem.mem_0 -= p0;
+            mem.mem_1 -= p1;
+        }
+    }
+
+    // LPR.Gen function, detailed at page 17
     PKE_Gen_keys PKE_Gen() {
 
         ZZ_pE a, b, s_hat;
@@ -195,13 +236,35 @@ extern "C" {
 
         PKE_Gen_keys keys;
         keys.pk = pk;
-        keys.sk = s_hat;
+        keys.sk = s_hat; // sk should be (1, s_hat), but we handle it in HSS_Gen.
 
         return keys;
     }
 
+    Context generate_context() {
+        Context ctx;
+        // Should compute the size of q, p and the polynomial based on the security parameter
+        // and the function computed, but for now, we will use fixed sizes for demonstration.
+        ZZ p = RandomPrime_ZZ(64);
+        ZZ q_div_by_p = RandomPrime_ZZ(8192 - 64);
+        ZZ q = p * q_div_by_p;
+        ZZ_p::init(q);
+
+        ZZ_pX modulus_poly;
+        SetCoeff(modulus_poly, 8192, 1); // x^8192
+        SetCoeff(modulus_poly, 0, 1); // x^8192 + 1
+        ZZ_pE::init(modulus_poly);
+
+        ctx.p = p;
+        ctx.q = q;
+
+        return ctx;
+    }
+
     HSS_Gen_keys HSS_Gen() {
         // Implementation for HSS key generation
+        Context ctx = generate_context();
+
         PKE_Gen_keys pke_gen_output = PKE_Gen();
         ZZ_pE s_0_0, s_0_1, s_1_0, s_1_1;
         random(s_0_0);
@@ -224,30 +287,75 @@ extern "C" {
         return keys;
     }
 
+    Input_Value HSS_Enc(public_key pk, ZZ x, Context ctx) {
+        return OKDM(pk, x, ctx.p, ctx.q);
+    }
+
+    Memory_Value load(int b, Input_Value input, eval_key ek, Context ctx) {
+        Memory_Value result;
+        result = DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
+        PRF(b, ek.prf_key, result);
+        return result;
+    }
+
+    Memory_Value add_memory_values(int b, Memory_Value mem0, Memory_Value mem1, eval_key ek) {
+        Memory_Value result;
+        result.mem_0 = mem0.mem_0 + mem1.mem_0;
+        result.mem_1 = mem0.mem_1 + mem1.mem_1;
+        PRF(b, ek.prf_key, result);
+        return result;
+    }
+
+    Input_Value add_input_values(Input_Value input0, Input_Value input1) {
+        Input_Value result;
+        result.c_00 = input0.c_00 + input1.c_00;
+        result.c_01 = input0.c_01 + input1.c_01;
+        result.c_10 = input0.c_10 + input1.c_10;
+        result.c_11 = input0.c_11 + input1.c_11;
+        return result;
+    }
+
+    Memory_Value multiply(int b, Input_Value input, Memory_Value memory, eval_key ek, Context ctx) {
+        Memory_Value result;
+        result = DDEC(input, memory, ctx);
+        PRF(b, ek.prf_key, result);
+        return result;
+    }
+
+    // LPR.OKDM function, detailed at page 17
     Input_Value OKDM(public_key pk, ZZ x, ZZ p, ZZ q) {
         Input_Value result;
         ZZ_pX raw_v, raw_e0, raw_e1;
         ZZ_pE v, e0, e1, poly_x;
 
         x = x * q / p; // Scale x to the modulus q
-        poly_x = conv<ZZ_pE>(conv<ZZ_pX>(x)); // Convert x to a polynomial in the ring
+        ZZ_p x_p = conv<ZZ_p>(x);
 
-        for (long i = 0; i < 2; i++) {
-            generate_distributions(raw_v, raw_e0, 8192, 64, 8);
-            generate_distributions(raw_v, raw_e1, 8192, 64, 8);
+        encryption enc_0 = Enc(pk, conv<ZZ_p>(0));
+        encryption enc_x = Enc(pk, x_p);
 
-            conv(v, raw_v);
-            conv(e0, raw_e0);
-            conv(e1, raw_e1);
+        result.c_00 = enc_x.c_0;
+        result.c_10 = enc_x.c_1;
+        result.c_01 = enc_0.c_0;
+        result.c_11 = enc_0.c_1 + x_p;
 
-            if (i == 0) {
-                result.c_00 = pk.b * v + e0 + poly_x; 
-                result.c_01 = -pk.a * v + e1; 
-            } else {
-                result.c_10 = pk.b * v + e0; 
-                result.c_11 = -pk.a * v + e1 + poly_x; 
-            }
-        }
+        return result;
+    }
+
+    //LPR.Enc function, detailed at page 17
+    encryption Enc(public_key pk, ZZ_p x) {
+        encryption result;
+        ZZ_pE r, e0, e1;
+        ZZ_pX r_raw, e0_raw, e1_raw;
+        generate_distributions(r_raw, e0_raw, 8192, 64, 8);
+        generate_distributions(r_raw, e1_raw, 8192, 64, 8);
+
+        conv(r, r_raw);
+        conv(e0, e0_raw);
+        conv(e1, e1_raw);
+
+        result.c_0 = pk.a * r + e0;
+        result.c_1 = pk.b * r + e1 + x;
 
         return result;
     }
@@ -263,23 +371,13 @@ extern "C" {
         return conv<ZZ_pE>(rounded_value);
     }
 
-    Memory_Value DDEC(int b, eval_key ek, Input_Value input, Memory_Value memory, Context ctx) {
+    Memory_Value DDEC(Input_Value input, Memory_Value memory, Context ctx) {
         Memory_Value result;
 
         ZZ_pE term0, term1;
         term0 = round(input.c_00 * memory.mem_0 + input.c_01 * memory.mem_1, ctx.p, ctx.q);
         term1 = round(input.c_10 * memory.mem_0 + input.c_11 * memory.mem_1, ctx.p, ctx.q);
 
-        // TODO: Add the PRF term using ek.prf_key to mask the result, ensuring security against chosen-ciphertext attacks.
-        ZZ_pE prf_term;
-
-        if (b == 0) {
-            result.mem_0 = term0 + prf_term; 
-            result.mem_1 = term1 + prf_term;
-        } else {
-            result.mem_0 = term0 - prf_term; 
-            result.mem_1 = term1 - prf_term;
-        }
         return result;
     }
 

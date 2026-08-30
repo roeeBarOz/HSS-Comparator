@@ -37,6 +37,11 @@ extern "C" {
         eval_key eval_key1;
     };
 
+    struct encryption {
+        NTL::ZZ_pE c_0;
+        NTL::ZZ_pE c_1;
+    };
+
     struct Input_Value {
         NTL::ZZ_pE c_00;
         NTL::ZZ_pE c_01;
