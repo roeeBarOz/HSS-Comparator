@@ -6,6 +6,7 @@
 #include <random>
 #include <algorithm>
 #include <sstream>
+#include <chrono>
 #include "quetient_ring_wrapper.h"
 #include "../PRF/aesni_ctr.c"
 
@@ -241,18 +242,18 @@ extern "C" {
         return keys;
     }
 
-    Context generate_context() {
+    Context generate_context(int n, int log_p, int log_q) {
         Context ctx;
         // Should compute the size of q, p and the polynomial based on the security parameter
         // and the function computed, but for now, we will use fixed sizes for demonstration.
-        ZZ p = RandomPrime_ZZ(64);
-        ZZ q_div_by_p = RandomPrime_ZZ(8192 - 64);
+        ZZ p = RandomPrime_ZZ(log_p);
+        ZZ q_div_by_p = RandomPrime_ZZ(log_q - log_p);
         ZZ q = p * q_div_by_p;
         ZZ_p::init(q);
 
         ZZ_pX modulus_poly;
-        SetCoeff(modulus_poly, 8192, 1); // x^8192
-        SetCoeff(modulus_poly, 0, 1); // x^8192 + 1
+        SetCoeff(modulus_poly, n, 1); // x^n
+        SetCoeff(modulus_poly, 0, 1); // x^n + 1
         ZZ_pE::init(modulus_poly);
 
         ctx.p = p;
@@ -263,7 +264,6 @@ extern "C" {
 
     HSS_Gen_keys HSS_Gen() {
         // Implementation for HSS key generation
-        Context ctx = generate_context();
 
         PKE_Gen_keys pke_gen_output = PKE_Gen();
         ZZ_pE s_0_0, s_0_1, s_1_0, s_1_1;
@@ -379,6 +379,120 @@ extern "C" {
         term1 = round(input.c_10 * memory.mem_0 + input.c_11 * memory.mem_1, ctx.p, ctx.q);
 
         return result;
+    }
+
+    void benchmark_HSS_Gen(int iterations) {
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            HSS_Gen();
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for HSS_Gen over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_HSS_Enc(int iterations, Context ctx = {0, 0}, PKE_Gen_keys pke_gen_keys) {
+        if (ctx == {0, 0}) {
+            ctx = generate_context(8192, 72, 146);
+            pke_gen_keys = PKE_Gen();
+        }
+        ZZ x = RandomBits_ZZ(1); // Random input value
+
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            HSS_Enc(pke_gen_keys.pk, x, ctx);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for HSS_Enc over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_load(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+        int b = 0; // Example bit
+        if (ctx == {0, 0}) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        ZZ x = RandomBits_ZZ(1); // Random input value
+        Input_Value input = HSS_Enc(hss_gen_keys.pke_keys.pk, x, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            load(b, input, hss_gen_keys.eval_key0, ctx);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for load over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_add_memory_values(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+        int b = 0; // Example bit
+        if (ctx == {0, 0}) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        ZZ x1 = RandomBits_ZZ(1); // Random input value 1
+        ZZ x2 = RandomBits_ZZ(1);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        Memory_Value mem1 = load(b, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem2 = load(b, input2, hss_gen_keys.eval_key0, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            add_memory_values(b, mem1, mem2, hss_gen_keys.eval_key0);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for add_memory_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_add_input_values(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+        if (ctx == {0, 0}) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        ZZ x1 = RandomBits_ZZ(1); // Random input value 1
+        ZZ x2 = RandomBits_ZZ(1); // Random input value 2
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            add_input_values(input1, input2);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for add_input_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_multiply(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+        int b = 0;
+        if (ctx == {0, 0}) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        ZZ x1 = RandomBits_ZZ(1);
+        ZZ x2 = RandomBits_ZZ(1);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        Memory_Value mem1 = load(b, input1, hss_gen_keys.eval_key0, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            multiply(b, input2, mem1, hss_gen_keys.eval_key0, ctx);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for multiply over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_all(int iterations) {
+        Context ctx = generate_context(8192, 72, 146);
+        HSS_Gen_keys hss_gen_keys = HSS_Gen();
+        PKE_Gen_keys pke_gen_keys = hss_gen_keys.pke_keys;
+        benchmark_HSS_Gen(iterations);
+        benchmark_HSS_Enc(iterations, ctx, pke_gen_keys);
+        benchmark_load(iterations, ctx, hss_gen_keys);
+        benchmark_add_memory_values(iterations, ctx, hss_gen_keys);
+        benchmark_add_input_values(iterations, ctx, hss_gen_keys);
+        benchmark_multiply(iterations, ctx, hss_gen_keys);
     }
 
 }
