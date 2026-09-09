@@ -6,29 +6,31 @@
 #include <NTL/ZZ_pE.h>
 #include <NTL/vector.h>
 
+using namespace NTL;
+
 #ifdef __cplusplus
 extern "C" {
     #endif
     
     struct Context {
-        NTL::ZZ q;
-        NTL::ZZ p;
+        ZZ q;
+        ZZ p;
     };
 
     struct public_key {
-        NTL::ZZ_pE a;
-        NTL::ZZ_pE b;
+        ZZ_pE a;
+        ZZ_pE b;
     };
 
     struct PKE_Gen_keys {
         public_key pk;
-        NTL::ZZ_pE sk;
+        ZZ_pE sk;
     };
 
     struct eval_key {
-        NTL::ZZ prf_key;
-        NTL::ZZ_pE share_of_1;
-        NTL::ZZ_pE share_of_sk;
+        uint8_t prf_key[16]; // 128-bit key for AES
+        ZZ_pE share_of_1;
+        ZZ_pE share_of_sk;
     };
 
     struct HSS_Gen_keys {
@@ -38,21 +40,26 @@ extern "C" {
     };
 
     struct encryption {
-        NTL::ZZ_pE c_0;
-        NTL::ZZ_pE c_1;
+        ZZ_pE c_0;
+        ZZ_pE c_1;
     };
 
     struct Input_Value {
-        NTL::ZZ_pE c_00;
-        NTL::ZZ_pE c_01;
-        NTL::ZZ_pE c_10;
-        NTL::ZZ_pE c_11;
+        ZZ_pE c_00;
+        ZZ_pE c_01;
+        ZZ_pE c_10;
+        ZZ_pE c_11;
     };
 
     struct Memory_Value {
-        NTL::ZZ_pE mem_0;
-        NTL::ZZ_pE mem_1;
+        ZZ_pE mem_0;
+        ZZ_pE mem_1;
     };
+
+    Input_Value OKDM(public_key pk, ZZ x, ZZ p, ZZ q);
+    Memory_Value DDEC(Input_Value input, Memory_Value memory, Context ctx);
+    ZZ_pE round_poly(ZZ_pE value, ZZ p, ZZ q);
+    encryption Enc(public_key pk, ZZ_p x);
 
     #ifdef __cplusplus
 }

@@ -2,9 +2,10 @@
 
 #include <stdint.h>
 #include <string.h>
-#include <wmmintrin.h>
+#include <immintrin.h>
 
 // Encrypt a single block with AES-NI
+__attribute__((target("aes,sse2")))
 void aesni_encrypt_block(const uint8_t *key, const uint8_t *input, uint8_t *output) {
     __m128i m = _mm_loadu_si128((__m128i*)input);
     __m128i k = _mm_loadu_si128((__m128i*)key);

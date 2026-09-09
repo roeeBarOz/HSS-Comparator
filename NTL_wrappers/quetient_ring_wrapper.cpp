@@ -13,6 +13,7 @@
 using namespace NTL;
 
 vec_ZZ_pX* precomp = nullptr;
+Context default_ctx = {ZZ(0), ZZ(0)};
 
 extern "C" {
 
@@ -37,90 +38,6 @@ extern "C" {
     void init_modulus(const ZZ* r, ZZ_pX* modulus) {
         ZZ_p::init(*r);
         ZZ_pE::init(*modulus);
-    }
-
-    vec_ZZ_pX* find_roots(const ZZ_pX* poly, long n) {
-        vec_ZZ_pX* roots = new vec_ZZ_pX;
-        ZZ_p omega;
-        ZZ r = ZZ_p::modulus();
-        ZZ exp = (r - 1) / (2 * n);
-
-        // runs twice on average, since the probability of finding a primitive 2n-th root of unity is 1/2
-        while (true) {
-            ZZ_p g;
-            random(g);
-            power(omega, g, exp);
-
-            ZZ_p check;
-            power(check, omega, n);
-            if (check == -1) {
-                break;
-            }
-        }
-
-        roots->SetLength(n);
-        ZZ_p current_root = omega;
-        ZZ_p omega_sqr = omega * omega; // Multiply by omega^2 to jump to the next odd power
-        
-        for (long i = 0; i < n; ++i) {
-            ZZ_pX F_i;
-            SetCoeff(F_i, 1, 1);             // Coefficient of x^1 is 1
-            SetCoeff(F_i, 0, -current_root); // Coefficient of x^0 is -root
-            
-            roots->operator[](i) = F_i;
-            current_root *= omega_sqr;       // Advance to the next odd power
-        }
-
-        return roots;
-    }
-
-    // Precompute the P_i(x) polynomials for CRT reconstruction
-    vec_ZZ_pX* CRT_precomputation() {
-        long n = 8192;
-        ZZ r = ZZ(8191);
-        ZZ_pX modulus_poly;
-        SetCoeff(modulus_poly, n, 1); // x^n
-        SetCoeff(modulus_poly, 0, 1); // x^n + 1
-        init_modulus(&r, &modulus_poly);
-
-        vec_ZZ_pX* roots = find_roots(&modulus_poly, n);
-
-        // compute M(x) = prod_(i=1 to n) F_i(x)
-        ZZ_pX M;
-        SetCoeff(M, 0, 1); // M(x) starts as 1
-        for (long i = 0; i < n; ++i) {
-            M *= roots->operator[](i);
-        }
-
-        precomp = new vec_ZZ_pX;
-        precomp->SetLength(n);
-        // denote by M_i(x) = M(x) / F_i(x)
-        // compute M_i(x) and its inverse Y_i(x) = M_i(x)^(-1) mod F_i(x)
-        // compute P_i(x) = M_i(x) * Y_i(x) mod A(x)
-        for (long i = 0; i < n; ++i) {
-            ZZ_pX F_i = roots->operator[](i);
-            ZZ_pX M_i = M / F_i;
-            ZZ_pX Y_i;
-            InvMod(Y_i, M_i, F_i); // Y_i = M_i^(-1) mod F_i
-            ZZ_pX P_i = (M_i * Y_i) % modulus_poly; // P_i = M_i * Y_i mod A(x)
-            precomp->operator[](i) = P_i; // Store P_i in the precomputation vector
-        }
-        return precomp;
-    }
-
-    // add the inputs together, each multiplied by the corresponding P_i, and reduce the result modulo A(x) to get the final reconstructed polynomial
-    ZZ_pX* CRT_reconstruction(const vec_ZZ* values) {
-        long n = precomp->length();
-        ZZ_pX result;
-        SetCoeff(result, 0, 0); // Initialize result to 0
-
-        for (long i = 0; i < n; ++i) {
-            ZZ_pX P_i = precomp->operator[](i);
-            ZZ v_i = values->operator[](i);
-            result += conv<ZZ_p>(v_i) * P_i; // reconstruct the polynomial using the precomputed P_i and the given values v_i
-        }
-
-        return &result; // Return the reconstructed polynomial
     }
 
     void generate_distributions(ZZ_pX& raw_s_hat, ZZ_pX& raw_e, long n, long h_sk, double sigma) {
@@ -164,21 +81,16 @@ extern "C" {
         }
     }
 
-    void apply_prf(const ZZ key, ZZ_pE& output) {
-        // Convert the key to a 16-byte array for AES
-        uint8_t aes_key[16];
-        for (int i = 0; i < 16; ++i) {
-            aes_key[i] = conv<uint8_t>((key >> (8 * i)) & 0xFF);
-        }
+    void apply_prf(const uint8_t key[16], uint8_t id, ZZ_pE& output) {
 
         // Use a fixed nonce for simplicity; in practice, this should be unique per invocation
         uint8_t nonce[8] = {0}; // 64-bit nonce initialized to zero
 
         // Prepare the output buffer for the keystream
-        uint8_t keystream[16]; // AES block size is 16 bytes
+        uint8_t keystream[16] = {id}; // AES block size is 16 bytes
 
         // Generate the keystream using AES-CTR mode
-        aesni_ctr_encrypt(aes_key, nonce, keystream, keystream, 16);
+        aesni_ctr_encrypt(key, nonce, keystream, keystream, 16);
 
         // Convert the generated keystream into a polynomial in ZZ_pE
         ZZ_pX poly;
@@ -189,10 +101,10 @@ extern "C" {
         output = conv<ZZ_pE>(poly);
     }
 
-    void PRF(int b, const ZZ key, Memory_Value& mem) {
+    void PRF(int b, const uint8_t key[16], const uint8_t id, Memory_Value& mem) {
         ZZ_pE p0, p1;
-        apply_prf(key, p0);
-        apply_prf(key, p1);
+        apply_prf(key, id, p0);
+        apply_prf(key, id, p1);
 
         if (b == 0) {
             mem.mem_0 += p0;
@@ -271,10 +183,13 @@ extern "C" {
         random(s_0_1);
         s_1_0 = s_0_0 - 1;
         s_1_1 = s_0_1 - pke_gen_output.sk;
-        ZZ k = RandomBits_ZZ(256);
+        uint8_t k[16];
+        for (int i = 0; i < 16; ++i) {
+            k[i] = random() % 256; // Random byte for AES key
+        }
         eval_key ek_0, ek_1;
-        ek_0.prf_key = k;
-        ek_1.prf_key = k;
+        memcpy(ek_0.prf_key, k, 16);
+        memcpy(ek_1.prf_key, k, 16);
         ek_0.share_of_1 = s_0_0;
         ek_1.share_of_1 = s_1_0;
         ek_0.share_of_sk = s_0_1;
@@ -294,7 +209,7 @@ extern "C" {
     Memory_Value load(int b, Input_Value input, eval_key ek, Context ctx) {
         Memory_Value result;
         result = DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
-        PRF(b, ek.prf_key, result);
+        PRF(b, ek.prf_key, 0, result); // id is now 0, but should be 
         return result;
     }
 
@@ -302,7 +217,7 @@ extern "C" {
         Memory_Value result;
         result.mem_0 = mem0.mem_0 + mem1.mem_0;
         result.mem_1 = mem0.mem_1 + mem1.mem_1;
-        PRF(b, ek.prf_key, result);
+        PRF(b, ek.prf_key, 0, result); // id is now 0, but should be 
         return result;
     }
 
@@ -318,7 +233,7 @@ extern "C" {
     Memory_Value multiply(int b, Input_Value input, Memory_Value memory, eval_key ek, Context ctx) {
         Memory_Value result;
         result = DDEC(input, memory, ctx);
-        PRF(b, ek.prf_key, result);
+        PRF(b, ek.prf_key, 0, result); // id is now 0, but should be 
         return result;
     }
 
@@ -360,12 +275,14 @@ extern "C" {
         return result;
     }
 
-    ZZ_pE round(ZZ_pE value, ZZ p, ZZ q) {
+    ZZ_pE round_poly(ZZ_pE value, ZZ p, ZZ q) {
         ZZ_pX raw_value = conv<ZZ_pX>(value);
         ZZ_pX rounded_value;
-        for (long i = 0; i < raw_value.rep.length(); i++) {
+        ZZ q_div_2 = q / 2;
+        long degree = deg(raw_value);
+        for (long i = 0; i < degree; i++) {
             ZZ coeff = rep(raw_value.rep[i]);
-            coeff = (coeff * p + q / 2) / q; // Scale down and round
+            coeff = (coeff * p + q_div_2) / q; // Scale down and round
             SetCoeff(rounded_value, i, conv<ZZ_p>(coeff));
         }
         return conv<ZZ_pE>(rounded_value);
@@ -375,8 +292,10 @@ extern "C" {
         Memory_Value result;
 
         ZZ_pE term0, term1;
-        term0 = round(input.c_00 * memory.mem_0 + input.c_01 * memory.mem_1, ctx.p, ctx.q);
-        term1 = round(input.c_10 * memory.mem_0 + input.c_11 * memory.mem_1, ctx.p, ctx.q);
+        term0 = round_poly(input.c_00 * memory.mem_0 + input.c_01 * memory.mem_1, ctx.p, ctx.q);
+        term1 = round_poly(input.c_10 * memory.mem_0 + input.c_11 * memory.mem_1, ctx.p, ctx.q);
+        result.mem_0 = term0;
+        result.mem_1 = term1;
 
         return result;
     }
@@ -391,8 +310,8 @@ extern "C" {
         std::cout << "Average time for HSS_Gen over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_HSS_Enc(int iterations, Context ctx = {0, 0}, PKE_Gen_keys pke_gen_keys) {
-        if (ctx == {0, 0}) {
+    void benchmark_HSS_Enc(int iterations, PKE_Gen_keys pke_gen_keys, Context ctx = default_ctx) {
+        if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
             pke_gen_keys = PKE_Gen();
         }
@@ -407,9 +326,9 @@ extern "C" {
         std::cout << "Average time for HSS_Enc over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_load(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+    void benchmark_load(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0; // Example bit
-        if (ctx == {0, 0}) {
+        if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
             hss_gen_keys = HSS_Gen();
         }
@@ -424,9 +343,9 @@ extern "C" {
         std::cout << "Average time for load over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_add_memory_values(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+    void benchmark_add_memory_values(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0; // Example bit
-        if (ctx == {0, 0}) {
+        if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
             hss_gen_keys = HSS_Gen();
         }
@@ -445,8 +364,8 @@ extern "C" {
         std::cout << "Average time for add_memory_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_add_input_values(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
-        if (ctx == {0, 0}) {
+    void benchmark_add_input_values(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+        if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
             hss_gen_keys = HSS_Gen();
         }
@@ -463,9 +382,9 @@ extern "C" {
         std::cout << "Average time for add_input_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_multiply(int iterations, Context ctx = {0, 0}, HSS_Gen_keys hss_gen_keys) {
+    void benchmark_multiply(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0;
-        if (ctx == {0, 0}) {
+        if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
             hss_gen_keys = HSS_Gen();
         }
@@ -487,12 +406,12 @@ extern "C" {
         Context ctx = generate_context(8192, 72, 146);
         HSS_Gen_keys hss_gen_keys = HSS_Gen();
         PKE_Gen_keys pke_gen_keys = hss_gen_keys.pke_keys;
-        benchmark_HSS_Gen(iterations);
-        benchmark_HSS_Enc(iterations, ctx, pke_gen_keys);
-        benchmark_load(iterations, ctx, hss_gen_keys);
-        benchmark_add_memory_values(iterations, ctx, hss_gen_keys);
-        benchmark_add_input_values(iterations, ctx, hss_gen_keys);
-        benchmark_multiply(iterations, ctx, hss_gen_keys);
+        // benchmark_HSS_Gen(iterations);
+        // benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
+        // benchmark_load(iterations, hss_gen_keys, ctx);
+        // benchmark_add_memory_values(iterations, hss_gen_keys, ctx);
+        // benchmark_add_input_values(iterations, hss_gen_keys, ctx);
+        benchmark_multiply(iterations, hss_gen_keys, ctx);
     }
 
 }
