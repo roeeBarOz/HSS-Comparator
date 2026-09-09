@@ -60,7 +60,6 @@ extern "C" {
         // Pick the first h_sk indices to be non-zero
         for (long i = 0; i < h_sk; ++i) {
             long val = coin(gen) ? 1 : -1;
-            // to_ZZ_p safely handles negative numbers, converting -1 to q-1
             SetCoeff(raw_s_hat, indices[i], to_ZZ_p(val)); 
         }
 
@@ -87,14 +86,14 @@ extern "C" {
         uint8_t nonce[8] = {0}; // 64-bit nonce initialized to zero
 
         // Prepare the output buffer for the keystream
-        uint8_t keystream[16] = {id}; // AES block size is 16 bytes
+        uint8_t keystream[8192] = {id}; // AES block size is 8192 bytes
 
         // Generate the keystream using AES-CTR mode
-        aesni_ctr_encrypt(key, nonce, keystream, keystream, 16);
+        aesni_ctr_encrypt(key, nonce, keystream, keystream, 8192); // 8192 bytes for the polynomial coefficients
 
         // Convert the generated keystream into a polynomial in ZZ_pE
         ZZ_pX poly;
-        for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < 8192; ++i) {
             SetCoeff(poly, i, to_ZZ_p(keystream[i]));
         }
         
@@ -124,7 +123,6 @@ extern "C" {
         random(a);
 
         // 2. Generate the raw polynomials for s_hat and e.
-        // (You will populate these using the custom samplers we discussed).
         ZZ_pX raw_s_hat; 
         ZZ_pX raw_e;
         
@@ -177,16 +175,28 @@ extern "C" {
     HSS_Gen_keys HSS_Gen() {
         // Implementation for HSS key generation
 
+        // setting seed for NTL random number generator
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<unsigned long> dis;
+        SetSeed(conv<ZZ>(dis(gen)));
+
         PKE_Gen_keys pke_gen_output = PKE_Gen();
         ZZ_pE s_0_0, s_0_1, s_1_0, s_1_1;
         random(s_0_0);
         random(s_0_1);
         s_1_0 = s_0_0 - 1;
         s_1_1 = s_0_1 - pke_gen_output.sk;
+
+        // Generate a random 128-bit key for AES
         uint8_t k[16];
+        std::random_device rd_key;
+        std::mt19937 gen_key(rd_key());
+        std::uniform_int_distribution<> dis_key(0, 255);
         for (int i = 0; i < 16; ++i) {
-            k[i] = random() % 256; // Random byte for AES key
+            k[i] = dis_key(gen_key); // Random byte for AES key
         }
+
         eval_key ek_0, ek_1;
         memcpy(ek_0.prf_key, k, 16);
         memcpy(ek_1.prf_key, k, 16);
@@ -202,26 +212,26 @@ extern "C" {
         return keys;
     }
 
-    Input_Value HSS_Enc(public_key pk, ZZ x, Context ctx) {
+    Input_Value HSS_Enc(const public_key& pk, const ZZ& x, const Context& ctx) {
         return OKDM(pk, x, ctx.p, ctx.q);
     }
 
-    Memory_Value load(int b, Input_Value input, eval_key ek, Context ctx) {
+    Memory_Value load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {
         Memory_Value result;
         result = DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
-        PRF(b, ek.prf_key, 0, result); // id is now 0, but should be 
+        PRF(b, ek.prf_key, id, result);
         return result;
     }
 
-    Memory_Value add_memory_values(int b, Memory_Value mem0, Memory_Value mem1, eval_key ek) {
+    Memory_Value add_memory_values(int b, int id, const Memory_Value& mem0, const Memory_Value& mem1, const eval_key& ek) {
         Memory_Value result;
         result.mem_0 = mem0.mem_0 + mem1.mem_0;
         result.mem_1 = mem0.mem_1 + mem1.mem_1;
-        PRF(b, ek.prf_key, 0, result); // id is now 0, but should be 
+        PRF(b, ek.prf_key, id, result);
         return result;
     }
 
-    Input_Value add_input_values(Input_Value input0, Input_Value input1) {
+    Input_Value add_input_values(const Input_Value& input0, const Input_Value& input1) {
         Input_Value result;
         result.c_00 = input0.c_00 + input1.c_00;
         result.c_01 = input0.c_01 + input1.c_01;
@@ -230,21 +240,20 @@ extern "C" {
         return result;
     }
 
-    Memory_Value multiply(int b, Input_Value input, Memory_Value memory, eval_key ek, Context ctx) {
+    Memory_Value multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx) {
         Memory_Value result;
         result = DDEC(input, memory, ctx);
-        PRF(b, ek.prf_key, 0, result); // id is now 0, but should be 
+        PRF(b, ek.prf_key, id, result);
         return result;
     }
 
     // LPR.OKDM function, detailed at page 17
-    Input_Value OKDM(public_key pk, ZZ x, ZZ p, ZZ q) {
+    Input_Value OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q) {
         Input_Value result;
         ZZ_pX raw_v, raw_e0, raw_e1;
         ZZ_pE v, e0, e1, poly_x;
 
-        x = x * q / p; // Scale x to the modulus q
-        ZZ_p x_p = conv<ZZ_p>(x);
+        ZZ_p x_p = conv<ZZ_p>(x * q / p); // Scale x to the modulus q
 
         encryption enc_0 = Enc(pk, conv<ZZ_p>(0));
         encryption enc_x = Enc(pk, x_p);
@@ -258,7 +267,7 @@ extern "C" {
     }
 
     //LPR.Enc function, detailed at page 17
-    encryption Enc(public_key pk, ZZ_p x) {
+    encryption Enc(const public_key& pk, const ZZ_p& x) {
         encryption result;
         ZZ_pE r, e0, e1;
         ZZ_pX r_raw, e0_raw, e1_raw;
@@ -275,7 +284,7 @@ extern "C" {
         return result;
     }
 
-    ZZ_pE round_poly(ZZ_pE value, ZZ p, ZZ q) {
+    ZZ_pE round_poly(const ZZ_pE& value, const ZZ& p, const ZZ& q) {
         ZZ_pX raw_value = conv<ZZ_pX>(value);
         ZZ_pX rounded_value;
         ZZ q_div_2 = q / 2;
@@ -288,7 +297,7 @@ extern "C" {
         return conv<ZZ_pE>(rounded_value);
     }
 
-    Memory_Value DDEC(Input_Value input, Memory_Value memory, Context ctx) {
+    Memory_Value DDEC(const Input_Value& input, const Memory_Value& memory, const Context& ctx) {
         Memory_Value result;
 
         ZZ_pE term0, term1;
@@ -336,7 +345,7 @@ extern "C" {
         Input_Value input = HSS_Enc(hss_gen_keys.pke_keys.pk, x, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            load(b, input, hss_gen_keys.eval_key0, ctx);
+            load(b, i, input, hss_gen_keys.eval_key0, ctx);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
@@ -353,11 +362,11 @@ extern "C" {
         ZZ x2 = RandomBits_ZZ(1);
         Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
         Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
-        Memory_Value mem1 = load(b, input1, hss_gen_keys.eval_key0, ctx);
-        Memory_Value mem2 = load(b, input2, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem1 = load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem2 = load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            add_memory_values(b, mem1, mem2, hss_gen_keys.eval_key0);
+            add_memory_values(b, i, mem1, mem2, hss_gen_keys.eval_key0);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
@@ -392,10 +401,10 @@ extern "C" {
         ZZ x2 = RandomBits_ZZ(1);
         Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
         Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
-        Memory_Value mem1 = load(b, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem1 = load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            multiply(b, input2, mem1, hss_gen_keys.eval_key0, ctx);
+            multiply(b, i, input2, mem1, hss_gen_keys.eval_key0, ctx);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
@@ -406,11 +415,11 @@ extern "C" {
         Context ctx = generate_context(8192, 72, 146);
         HSS_Gen_keys hss_gen_keys = HSS_Gen();
         PKE_Gen_keys pke_gen_keys = hss_gen_keys.pke_keys;
-        // benchmark_HSS_Gen(iterations);
-        // benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
-        // benchmark_load(iterations, hss_gen_keys, ctx);
-        // benchmark_add_memory_values(iterations, hss_gen_keys, ctx);
-        // benchmark_add_input_values(iterations, hss_gen_keys, ctx);
+        benchmark_HSS_Gen(iterations);
+        benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
+        benchmark_load(iterations, hss_gen_keys, ctx);
+        benchmark_add_memory_values(iterations, hss_gen_keys, ctx);
+        benchmark_add_input_values(iterations, hss_gen_keys, ctx);
         benchmark_multiply(iterations, hss_gen_keys, ctx);
     }
 
