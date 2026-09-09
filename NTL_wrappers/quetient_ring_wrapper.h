@@ -65,6 +65,10 @@ extern "C" {
     Input_Value add_input_values(const Input_Value& input0, const Input_Value& input1);
     Memory_Value multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx);
 
+    void polynomial_mult_time(int iterations);
+    void polynomial_add_time(int iterations);
+    void integer_mult_time(int iterations);
+    void integer_add_time(int iterations);
     #ifdef __cplusplus
 }
 #endif

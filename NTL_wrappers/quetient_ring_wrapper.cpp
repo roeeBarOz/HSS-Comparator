@@ -419,8 +419,62 @@ extern "C" {
         benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
         benchmark_load(iterations, hss_gen_keys, ctx);
         benchmark_add_memory_values(iterations, hss_gen_keys, ctx);
-        benchmark_add_input_values(iterations, hss_gen_keys, ctx);
-        benchmark_multiply(iterations, hss_gen_keys, ctx);
+    }
+
+    void polynomial_mult_time(int iterations) {
+        ZZ_pE poly1, poly2, result;
+        random(poly1);
+        random(poly2);
+
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            result = poly1 * poly2;
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for polynomial multiplication over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void polynomial_add_time(int iterations) {
+        ZZ_pE poly1, poly2, result;
+        random(poly1);
+        random(poly2);
+
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            result = poly1 + poly2;
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for polynomial addition over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void integer_mult_time(int iterations) {
+        ZZ_p a, b, result;
+        random(a);
+        random(b);
+
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            result = a * b;
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for integer multiplication over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void integer_add_time(int iterations) {
+        ZZ_p a, b, result;
+        random(a);
+        random(b);
+
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            result = a + b;
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for integer addition over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
 }
