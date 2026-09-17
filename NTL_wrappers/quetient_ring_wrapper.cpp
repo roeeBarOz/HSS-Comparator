@@ -2,6 +2,7 @@
 #include <NTL/ZZ_p.h>
 #include <NTL/ZZ_pE.h>
 #include <NTL/vector.h>
+#include <NTL/vec_ZZ_pE.h>
 #include <cstdlib>
 #include <random>
 #include <algorithm>
@@ -247,6 +248,34 @@ extern "C" {
         return result;
     }
 
+    // Multiplication of input value by 2 memory values
+    // Done using Strassen algorithm
+    // Return value is std::pair, consisting of 2 memory values
+    std::pair<Memory_Value, Memory_Value> strassen_multiplication(int b, int id, const Input_Value& input, const Memory_Value& mem1, const Memory_Value& mem2, const eval_key& ek, const Context& ctx) {
+        Memory_Value result1, result2;
+        vec_ZZ_pE m;
+        m.SetLength(7);
+
+        m[0] = (input.c_00 + input.c_11) * (mem1.mem_0 + mem2.mem_1);
+        m[1] = (input.c_10 + input.c_11) * mem1.mem_0;
+        m[2] = input.c_00 * (mem2.mem_0 - mem2.mem_1);
+        m[3] = input.c_11 * (mem1.mem_1 - mem1.mem_0);
+        m[4] = (input.c_00 + input.c_11) * mem2.mem_1;
+        m[5] = (input.c_10 - input.c_00) * (mem1.mem_0 + mem2.mem_0);
+        m[6] = (input.c_01 - input.c_11) * (mem1.mem_1 + mem2.mem_1);
+
+        result1.mem_0 = m[0] + m[3] - m[4] + m[6];
+        result1.mem_1 = m[1] + m[3];
+        result2.mem_0 = m[2] + m[4];
+        result2.mem_1 = m[0] - m[1] + m[2] + m[5];
+
+        PRF(b, ek.prf_key, id, result1);
+        PRF(b, ek.prf_key, id, result2);
+        m.kill();
+
+        return std::make_pair(result1, result2);
+    }
+
     // LPR.OKDM function, detailed at page 17
     Input_Value OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q) {
         Input_Value result;
@@ -411,6 +440,30 @@ extern "C" {
         std::cout << "Average time for multiply over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
+    void benchmark_strassen_multiplication(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+        int b = 0;
+        if (ctx.p == 0 && ctx.q == 0) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        ZZ x1 = RandomBits_ZZ(1);
+        ZZ x2 = RandomBits_ZZ(1);
+        ZZ x3 = RandomBits_ZZ(1);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        Input_Value input3 = HSS_Enc(hss_gen_keys.pke_keys.pk, x3, ctx);
+        Memory_Value mem1 = load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem2 = load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            strassen_multiplication(b, i, input3, mem1, mem2, hss_gen_keys.eval_key0, ctx);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / (2 * iterations); // since every strassen multiplication
+                                                                              // is equivalent to 2 multiplications
+        std::cout << "Average time for strassen multiplication over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
     void benchmark_all(int iterations) {
         Context ctx = generate_context(8192, 72, 146);
         HSS_Gen_keys hss_gen_keys = HSS_Gen();
@@ -419,6 +472,9 @@ extern "C" {
         benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
         benchmark_load(iterations, hss_gen_keys, ctx);
         benchmark_add_memory_values(iterations, hss_gen_keys, ctx);
+        benchmark_add_input_values(iterations, hss_gen_keys, ctx);
+        benchmark_multiply(iterations, hss_gen_keys, ctx);
+        benchmark_strassen_multiplication(iterations, hss_gen_keys, ctx);
     }
 
     void polynomial_mult_time(int iterations) {
