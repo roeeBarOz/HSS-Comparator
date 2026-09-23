@@ -214,17 +214,17 @@ extern "C" {
     }
 
     Input_Value HSS_Enc(const public_key& pk, const ZZ& x, const Context& ctx) {
-        return OKDM(pk, x, ctx.p, ctx.q);
+        return RLWE_OKDM(pk, x, ctx.p, ctx.q);
     }
 
-    Memory_Value load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {
+    Memory_Value RLWE_load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {
         Memory_Value result;
-        result = DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
+        result = RLWE_DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
         PRF(b, ek.prf_key, id, result);
         return result;
     }
 
-    Memory_Value add_memory_values(int b, int id, const Memory_Value& mem0, const Memory_Value& mem1, const eval_key& ek) {
+    Memory_Value RLWE_add_memory_values(int b, int id, const Memory_Value& mem0, const Memory_Value& mem1, const eval_key& ek) {
         Memory_Value result;
         result.mem_0 = mem0.mem_0 + mem1.mem_0;
         result.mem_1 = mem0.mem_1 + mem1.mem_1;
@@ -232,7 +232,7 @@ extern "C" {
         return result;
     }
 
-    Input_Value add_input_values(const Input_Value& input0, const Input_Value& input1) {
+    Input_Value RLWE_add_input_values(const Input_Value& input0, const Input_Value& input1) {
         Input_Value result;
         result.c_00 = input0.c_00 + input1.c_00;
         result.c_01 = input0.c_01 + input1.c_01;
@@ -241,9 +241,9 @@ extern "C" {
         return result;
     }
 
-    Memory_Value multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx) {
+    Memory_Value RLWE_multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx) {
         Memory_Value result;
-        result = DDEC(input, memory, ctx);
+        result = RLWE_DDEC(input, memory, ctx);
         PRF(b, ek.prf_key, id, result);
         return result;
     }
@@ -277,7 +277,7 @@ extern "C" {
     }
 
     // LPR.OKDM function, detailed at page 17
-    Input_Value OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q) {
+    Input_Value RLWE_OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q) {
         Input_Value result;
         ZZ_pX raw_v, raw_e0, raw_e1;
         ZZ_pE v, e0, e1, poly_x;
@@ -326,7 +326,7 @@ extern "C" {
         return conv<ZZ_pE>(rounded_value);
     }
 
-    Memory_Value DDEC(const Input_Value& input, const Memory_Value& memory, const Context& ctx) {
+    Memory_Value RLWE_DDEC(const Input_Value& input, const Memory_Value& memory, const Context& ctx) {
         Memory_Value result;
 
         ZZ_pE term0, term1;
@@ -364,7 +364,7 @@ extern "C" {
         std::cout << "Average time for HSS_Enc over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_load(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+    void benchmark_RLWE_load(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0; // Example bit
         if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
@@ -374,14 +374,14 @@ extern "C" {
         Input_Value input = HSS_Enc(hss_gen_keys.pke_keys.pk, x, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            load(b, i, input, hss_gen_keys.eval_key0, ctx);
+            RLWE_load(b, i, input, hss_gen_keys.eval_key0, ctx);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
-        std::cout << "Average time for load over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+        std::cout << "Average time for RLWE_load over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_add_memory_values(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+    void benchmark_RLWE_add_memory_values(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0; // Example bit
         if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
@@ -391,18 +391,18 @@ extern "C" {
         ZZ x2 = RandomBits_ZZ(1);
         Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
         Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
-        Memory_Value mem1 = load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
-        Memory_Value mem2 = load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem2 = RLWE_load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            add_memory_values(b, i, mem1, mem2, hss_gen_keys.eval_key0);
+            RLWE_add_memory_values(b, i, mem1, mem2, hss_gen_keys.eval_key0);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
-        std::cout << "Average time for add_memory_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+        std::cout << "Average time for RLWE_add_memory_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_add_input_values(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+    void benchmark_RLWE_add_input_values(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
             hss_gen_keys = HSS_Gen();
@@ -413,14 +413,14 @@ extern "C" {
         Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            add_input_values(input1, input2);
+            RLWE_add_input_values(input1, input2);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
-        std::cout << "Average time for add_input_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+        std::cout << "Average time for RLWE_add_input_values over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
-    void benchmark_multiply(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+    void benchmark_RLWE_multiply(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0;
         if (ctx.p == 0 && ctx.q == 0) {
             ctx = generate_context(8192, 72, 146);
@@ -430,14 +430,14 @@ extern "C" {
         ZZ x2 = RandomBits_ZZ(1);
         Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
         Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
-        Memory_Value mem1 = load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            multiply(b, i, input2, mem1, hss_gen_keys.eval_key0, ctx);
+            RLWE_multiply(b, i, input2, mem1, hss_gen_keys.eval_key0, ctx);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
-        std::cout << "Average time for multiply over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+        std::cout << "Average time for RLWE_multiply over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
     void benchmark_strassen_multiplication(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
@@ -452,8 +452,8 @@ extern "C" {
         Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
         Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
         Input_Value input3 = HSS_Enc(hss_gen_keys.pke_keys.pk, x3, ctx);
-        Memory_Value mem1 = load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
-        Memory_Value mem2 = load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
+        Memory_Value mem2 = RLWE_load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
             strassen_multiplication(b, i, input3, mem1, mem2, hss_gen_keys.eval_key0, ctx);
@@ -470,10 +470,10 @@ extern "C" {
         PKE_Gen_keys pke_gen_keys = hss_gen_keys.pke_keys;
         benchmark_HSS_Gen(iterations);
         benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
-        benchmark_load(iterations, hss_gen_keys, ctx);
-        benchmark_add_memory_values(iterations, hss_gen_keys, ctx);
-        benchmark_add_input_values(iterations, hss_gen_keys, ctx);
-        benchmark_multiply(iterations, hss_gen_keys, ctx);
+        benchmark_RLWE_load(iterations, hss_gen_keys, ctx);
+        benchmark_RLWE_add_memory_values(iterations, hss_gen_keys, ctx);
+        benchmark_RLWE_add_input_values(iterations, hss_gen_keys, ctx);
+        benchmark_RLWE_multiply(iterations, hss_gen_keys, ctx);
         benchmark_strassen_multiplication(iterations, hss_gen_keys, ctx);
     }
 
