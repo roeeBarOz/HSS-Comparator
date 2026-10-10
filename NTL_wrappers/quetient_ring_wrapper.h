@@ -56,10 +56,10 @@ extern "C" {
         ZZ_pE mem_1;
     };
 
-    Input_Value RLWE_OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q);
+    Input_Value RLWE_OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q, int k);
     Memory_Value RLWE_DDEC(const Input_Value& input, const Memory_Value& memory, const Context& ctx);
     ZZ_pE round_poly(const ZZ_pE& value, const ZZ& p, const ZZ& q);
-    encryption Enc(const public_key& pk, const ZZ_p& x);
+    encryption Enc(const public_key& pk, const ZZ_pX& x);
     Memory_Value RLWE_load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx);
     Memory_Value RLWE_add_memory_values(int b, int id, const Memory_Value& mem0, const Memory_Value& mem1, const eval_key& ek);
     Input_Value RLWE_add_input_values(const Input_Value& input0, const Input_Value& input1);

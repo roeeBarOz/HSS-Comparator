@@ -213,8 +213,8 @@ extern "C" {
         return keys;
     }
 
-    Input_Value HSS_Enc(const public_key& pk, const ZZ& x, const Context& ctx) {
-        return RLWE_OKDM(pk, x, ctx.p, ctx.q);
+    Input_Value HSS_Enc(const public_key& pk, const ZZ& x, const Context& ctx, int k) {
+        return RLWE_OKDM(pk, x, ctx.p, ctx.q, k);
     }
 
     Memory_Value RLWE_load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {
@@ -277,15 +277,14 @@ extern "C" {
     }
 
     // LPR.OKDM function, detailed at page 17
-    Input_Value RLWE_OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q) {
+    Input_Value RLWE_OKDM(const public_key& pk, const ZZ& x, const ZZ& p, const ZZ& q, int k) {
         Input_Value result;
-        ZZ_pX raw_v, raw_e0, raw_e1;
-        ZZ_pE v, e0, e1, poly_x;
-
+        ZZ_pX poly_x;
         ZZ_p x_p = conv<ZZ_p>(x * q / p); // Scale x to the modulus q
+        SetCoeff(poly_x, k, x_p); // Set the k-th coefficient to x_p
 
-        encryption enc_0 = Enc(pk, conv<ZZ_p>(0));
-        encryption enc_x = Enc(pk, x_p);
+        encryption enc_0 = Enc(pk, conv<ZZ_pX>(0));
+        encryption enc_x = Enc(pk, poly_x);
 
         result.c_00 = enc_x.c_0;
         result.c_10 = enc_x.c_1;
@@ -296,9 +295,9 @@ extern "C" {
     }
 
     //LPR.Enc function, detailed at page 17
-    encryption Enc(const public_key& pk, const ZZ_p& x) {
+    encryption Enc(const public_key& pk, const ZZ_pX& x) {
         encryption result;
-        ZZ_pE r, e0, e1;
+        ZZ_pE r, e0, e1, x_raw;
         ZZ_pX r_raw, e0_raw, e1_raw;
         generate_distributions(r_raw, e0_raw, 8192, 64, 8);
         generate_distributions(r_raw, e1_raw, 8192, 64, 8);
@@ -306,9 +305,10 @@ extern "C" {
         conv(r, r_raw);
         conv(e0, e0_raw);
         conv(e1, e1_raw);
+        conv(x_raw, x);
 
         result.c_0 = pk.a * r + e0;
-        result.c_1 = pk.b * r + e1 + x;
+        result.c_1 = pk.b * r + e1 + x_raw;
 
         return result;
     }
@@ -338,6 +338,23 @@ extern "C" {
         return result;
     }
 
+    Input_Value generate_UVC_input(const public_key& pk, int k, const Context& ctx) {
+        return HSS_Enc(pk, conv<ZZ>(1), ctx, k);
+    }
+
+    ZZ_pX UVC_output(const Memory_Value& mem, int poly_len) {
+        ZZ_pX result, temp;
+        temp = conv<ZZ_pX>(mem.mem_0);
+        for (int i = 0; i < poly_len; ++i) {
+            int coeff = 0;
+            for (int j = i; j < deg(temp); j += poly_len) {
+                coeff += rep(temp[j]) % 2;
+            }
+            SetCoeff(result, i, conv<ZZ_p>(coeff));
+        }
+        return result;
+    }
+
     void benchmark_HSS_Gen(int iterations) {
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
@@ -357,7 +374,7 @@ extern "C" {
 
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
-            HSS_Enc(pke_gen_keys.pk, x, ctx);
+            HSS_Enc(pke_gen_keys.pk, x, ctx, 0);
         }
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> avg = (end - start) / iterations;
@@ -371,7 +388,7 @@ extern "C" {
             hss_gen_keys = HSS_Gen();
         }
         ZZ x = RandomBits_ZZ(1); // Random input value
-        Input_Value input = HSS_Enc(hss_gen_keys.pke_keys.pk, x, ctx);
+        Input_Value input = HSS_Enc(hss_gen_keys.pke_keys.pk, x, ctx, 0);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
             RLWE_load(b, i, input, hss_gen_keys.eval_key0, ctx);
@@ -389,8 +406,8 @@ extern "C" {
         }
         ZZ x1 = RandomBits_ZZ(1); // Random input value 1
         ZZ x2 = RandomBits_ZZ(1);
-        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
-        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx, 0);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx, 0);
         Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
         Memory_Value mem2 = RLWE_load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
@@ -409,8 +426,8 @@ extern "C" {
         }
         ZZ x1 = RandomBits_ZZ(1); // Random input value 1
         ZZ x2 = RandomBits_ZZ(1); // Random input value 2
-        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
-        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx, 0);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx, 0);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
             RLWE_add_input_values(input1, input2);
@@ -428,8 +445,8 @@ extern "C" {
         }
         ZZ x1 = RandomBits_ZZ(1);
         ZZ x2 = RandomBits_ZZ(1);
-        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
-        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx, 0);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx, 0);
         Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; i++) {
@@ -449,9 +466,9 @@ extern "C" {
         ZZ x1 = RandomBits_ZZ(1);
         ZZ x2 = RandomBits_ZZ(1);
         ZZ x3 = RandomBits_ZZ(1);
-        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx);
-        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx);
-        Input_Value input3 = HSS_Enc(hss_gen_keys.pke_keys.pk, x3, ctx);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx, 0);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx, 0);
+        Input_Value input3 = HSS_Enc(hss_gen_keys.pke_keys.pk, x3, ctx, 0);
         Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
         Memory_Value mem2 = RLWE_load(b, 0, input2, hss_gen_keys.eval_key0, ctx);
         auto start = std::chrono::steady_clock::now();
@@ -464,10 +481,43 @@ extern "C" {
         std::cout << "Average time for strassen multiplication over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
+    void benchmark_generate_UVC_input(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+        if (ctx.p == 0 && ctx.q == 0) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        int k = 15; // example
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            generate_UVC_input(hss_gen_keys.pke_keys.pk, k, ctx);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for generate_UVC_input over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
+    void benchmark_UVC_output(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+        if (ctx.p == 0 && ctx.q == 0) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        int k = 15; // example
+        Input_Value input = generate_UVC_input(hss_gen_keys.pke_keys.pk, k, ctx);
+        Memory_Value mem = RLWE_load(0, 0, input, hss_gen_keys.eval_key0, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            UVC_output(mem, k);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for UVC_output over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
     void benchmark_all(int iterations) {
         Context ctx = generate_context(8192, 72, 146);
         HSS_Gen_keys hss_gen_keys = HSS_Gen();
         PKE_Gen_keys pke_gen_keys = hss_gen_keys.pke_keys;
+        std::cout << "p = " << ctx.p << ", q = " << ctx.q << std::endl;
         benchmark_HSS_Gen(iterations);
         benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
         benchmark_RLWE_load(iterations, hss_gen_keys, ctx);
@@ -475,6 +525,8 @@ extern "C" {
         benchmark_RLWE_add_input_values(iterations, hss_gen_keys, ctx);
         benchmark_RLWE_multiply(iterations, hss_gen_keys, ctx);
         benchmark_strassen_multiplication(iterations, hss_gen_keys, ctx);
+        benchmark_generate_UVC_input(iterations, hss_gen_keys, ctx);
+        benchmark_UVC_output(iterations, hss_gen_keys, ctx);
     }
 
     void polynomial_mult_time(int iterations) {
