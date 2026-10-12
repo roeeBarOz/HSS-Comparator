@@ -101,17 +101,14 @@ extern "C" {
         output = conv<ZZ_pE>(poly);
     }
 
-    void PRF(int b, const uint8_t key[16], const uint8_t id, Memory_Value& mem) {
-        ZZ_pE p0, p1;
-        apply_prf(key, id, p0);
-        apply_prf(key, id, p1);
+    void PRF(int b, const uint8_t key[16], const uint8_t id, ZZ_pE& mem) {
+        ZZ_pE p;
+        apply_prf(key, id, p);
 
         if (b == 0) {
-            mem.mem_0 += p0;
-            mem.mem_1 += p1;
+            mem += p;
         } else {
-            mem.mem_0 -= p0;
-            mem.mem_1 -= p1;
+            mem -= p;
         }
     }
 
@@ -220,7 +217,8 @@ extern "C" {
     Memory_Value RLWE_load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {
         Memory_Value result;
         result = RLWE_DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
-        PRF(b, ek.prf_key, id, result);
+        PRF(b, ek.prf_key, id, result.mem_0);
+        PRF(b, ek.prf_key, id, result.mem_1);
         return result;
     }
 
@@ -228,7 +226,8 @@ extern "C" {
         Memory_Value result;
         result.mem_0 = mem0.mem_0 + mem1.mem_0;
         result.mem_1 = mem0.mem_1 + mem1.mem_1;
-        PRF(b, ek.prf_key, id, result);
+        PRF(b, ek.prf_key, id, result.mem_0);
+        PRF(b, ek.prf_key, id, result.mem_1);
         return result;
     }
 
@@ -244,7 +243,15 @@ extern "C" {
     Memory_Value RLWE_multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx) {
         Memory_Value result;
         result = RLWE_DDEC(input, memory, ctx);
-        PRF(b, ek.prf_key, id, result);
+        PRF(b, ek.prf_key, id, result.mem_0);
+        PRF(b, ek.prf_key, id, result.mem_1);
+        return result;
+    }
+
+    Output_Value last_RLWE_multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx) {
+        Output_Value result;
+        result.out = round_poly(input.c_00 * memory.mem_0 + input.c_01 * memory.mem_1, ctx.p, ctx.q);
+        PRF(b, ek.prf_key, id, result.out);
         return result;
     }
 
@@ -269,8 +276,10 @@ extern "C" {
         result2.mem_0 = m[2] + m[4];
         result2.mem_1 = m[0] - m[1] + m[2] + m[5];
 
-        PRF(b, ek.prf_key, id, result1);
-        PRF(b, ek.prf_key, id, result2);
+        PRF(b, ek.prf_key, id, result1.mem_0);
+        PRF(b, ek.prf_key, id, result1.mem_1);
+        PRF(b, ek.prf_key, id, result2.mem_0);
+        PRF(b, ek.prf_key, id, result2.mem_1);
         m.kill();
 
         return std::make_pair(result1, result2);
@@ -457,6 +466,26 @@ extern "C" {
         std::cout << "Average time for RLWE_multiply over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
     }
 
+    void benchmark_last_RLWE_multiply(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
+        int b = 0;
+        if (ctx.p == 0 && ctx.q == 0) {
+            ctx = generate_context(8192, 72, 146);
+            hss_gen_keys = HSS_Gen();
+        }
+        ZZ x1 = RandomBits_ZZ(1);
+        ZZ x2 = RandomBits_ZZ(1);
+        Input_Value input1 = HSS_Enc(hss_gen_keys.pke_keys.pk, x1, ctx, 0);
+        Input_Value input2 = HSS_Enc(hss_gen_keys.pke_keys.pk, x2, ctx, 0);
+        Memory_Value mem1 = RLWE_load(b, 0, input1, hss_gen_keys.eval_key0, ctx);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < iterations; i++) {
+            last_RLWE_multiply(b, i, input2, mem1, hss_gen_keys.eval_key0, ctx);
+        }
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> avg = (end - start) / iterations;
+        std::cout << "Average time for last_RLWE_multiply over " << iterations << " iterations: " << avg.count() << " seconds." << std::endl;
+    }
+
     void benchmark_strassen_multiplication(int iterations, HSS_Gen_keys hss_gen_keys, Context ctx = default_ctx) {
         int b = 0;
         if (ctx.p == 0 && ctx.q == 0) {
@@ -517,13 +546,13 @@ extern "C" {
         Context ctx = generate_context(8192, 72, 146);
         HSS_Gen_keys hss_gen_keys = HSS_Gen();
         PKE_Gen_keys pke_gen_keys = hss_gen_keys.pke_keys;
-        std::cout << "p = " << ctx.p << ", q = " << ctx.q << std::endl;
         benchmark_HSS_Gen(iterations);
         benchmark_HSS_Enc(iterations, pke_gen_keys, ctx);
         benchmark_RLWE_load(iterations, hss_gen_keys, ctx);
         benchmark_RLWE_add_memory_values(iterations, hss_gen_keys, ctx);
         benchmark_RLWE_add_input_values(iterations, hss_gen_keys, ctx);
         benchmark_RLWE_multiply(iterations, hss_gen_keys, ctx);
+        benchmark_last_RLWE_multiply(iterations, hss_gen_keys, ctx);
         benchmark_strassen_multiplication(iterations, hss_gen_keys, ctx);
         benchmark_generate_UVC_input(iterations, hss_gen_keys, ctx);
         benchmark_UVC_output(iterations, hss_gen_keys, ctx);
