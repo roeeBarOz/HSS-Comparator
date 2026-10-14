@@ -151,6 +151,14 @@ def Mul(b, ek, i, m, id):
         zd.append(zz_mod(zz_add(DDLog(zz_p_pow(i[j], yd), N), str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), zz_add(id, str(j)).encode("utf-8")), 'big'))), N))
     return zd
 
+def Last_mul(b, ek, i, m, id):
+    N = state['N']
+    Bsk = state['Bsk']
+    yd = calculate_yd(m[1:], Bsk)
+    N_squared = zz_pow(N, "2")
+    zz_p_init(N_squared)
+    return zz_mod(zz_add(DDLog(zz_p_pow(i[0], yd), N), str(int.from_bytes(prf.apply(int(ek[0]).to_bytes(16, 'big'), id.encode("utf-8")), 'big'))), N)
+
 def benchmark_mul(pk, ek_0, ek_1, I, times=40):
     b = '0'
     m = Load(b, pk, ek_0, I, '0')
@@ -158,6 +166,16 @@ def benchmark_mul(pk, ek_0, ek_1, I, times=40):
     for _ in range(times):
         start_time = time()
         Mul(b, ek_0, I, m, '0')
+        total_time += time() - start_time
+    return (total_time / times) * 1000
+
+def benchmark_last_mul(pk, ek_0, ek_1, I, times=40):
+    b = '0'
+    m = Load(b, pk, ek_0, I, '0')
+    total_time = 0
+    for _ in range(times):
+        start_time = time()
+        Last_mul(b, ek_0, I, m, '0')
         total_time += time() - start_time
     return (total_time / times) * 1000
 
