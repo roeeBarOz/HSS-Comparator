@@ -24,7 +24,7 @@ public:
 
     // --- Core Cryptographic Interface (Implemented by Concrete Schemes) ---
     virtual void HSS_gen() = 0;
-    virtual InputHandle sample_random_input() = 0;
+    virtual InputHandle HSS_Enc(const PublicKeyHandle& pk, const ZZ& x, const ContextHandle& ctx, int k) = 0;
     virtual MemoryHandle load(int party_id, int action_id, const InputHandle& input, 
                             const EvalKeyHandle& ek, const ContextHandle& ctx) = 0;
     virtual MemoryHandle multiply(int party_id, int action_id, const MemoryHandle& mem, 

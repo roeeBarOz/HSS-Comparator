@@ -211,8 +211,10 @@ extern "C" {
         return keys;
     }
 
-    Input_Value HSS_Enc(const public_key& pk, const ZZ& x, const Context& ctx, int k) {
-        return RLWE_OKDM(pk, x, ctx.p, ctx.q, k);
+    InputHandle RLWEHSS::HSS_Enc(const PublicKeyHandle& pk, const ZZ& x, const ContextHandle& ctx, int k) {
+        RLWEContext context = *std::static_pointer_cast<RLWEContext>(ctx);
+        RLWEPublicKey public_key = *std::static_pointer_cast<RLWEPublicKey>(pk);
+        return RLWE_OKDM(public_key, x, context.p, context.q, k);
     }
 
     Memory_Value RLWE_load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {

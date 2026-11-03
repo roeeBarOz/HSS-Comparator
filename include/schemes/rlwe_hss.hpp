@@ -86,7 +86,7 @@ public:
 class RLWEHSS : public IHSSScheme {
 public:
     HSSGenKeyHandle HSS_gen() override;
-    InputHandle sample_random_input() override;
+    InputHandle HSS_Enc(const PublicKeyHandle& pk, const ZZ& x, const ContextHandle& ctx, int k) override;
     MemoryHandle load(int party_id, const InputHandle& input) override;
     MemoryHandle multiply(int party_id, int action_id, const MemoryHandle& mem, const InputHandle& in, 
                         const EvalKeyHandle& ek, const ContextHandle& ctx) override;
