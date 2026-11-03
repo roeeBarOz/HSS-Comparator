@@ -87,12 +87,12 @@ class RLWEHSS : public IHSSScheme {
 public:
     HSSGenKeyHandle HSS_gen() override;
     InputHandle HSS_Enc(const PublicKeyHandle& pk, const ZZ& x, const ContextHandle& ctx, int k) override;
-    MemoryHandle load(int party_id, const InputHandle& input) override;
+    MemoryHandle load(int party_id, int action_id, const InputHandle& input, const EvalKeyHandle& ek, const ContextHandle& ctx) override;
     MemoryHandle multiply(int party_id, int action_id, const MemoryHandle& mem, const InputHandle& in, 
                         const EvalKeyHandle& ek, const ContextHandle& ctx) override;
-    MemoryHandle add_memory(int party_id, int action_id, const MemoryHandle& mem1, const MemoryHandle& mem2, 
+    MemoryHandle add_memory_values(int party_id, int action_id, const MemoryHandle& mem1, const MemoryHandle& mem2, 
                         const EvalKeyHandle& ek) override;
-    InputHandle add_inputs(const InputHandle& in1, const InputHandle& in2) override;
+    InputHandle add_input_values(const InputHandle& in1, const InputHandle& in2) override;
 };
 
 #endif // RLWE_HSS_HPP

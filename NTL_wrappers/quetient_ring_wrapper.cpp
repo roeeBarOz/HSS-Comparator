@@ -217,37 +217,61 @@ extern "C" {
         return RLWE_OKDM(public_key, x, context.p, context.q, k);
     }
 
-    Memory_Value RLWE_load(int b, int id, const Input_Value& input, const eval_key& ek, const Context& ctx) {
-        Memory_Value result;
-        result = RLWE_DDEC(input, {ek.share_of_1, ek.share_of_sk}, ctx);
-        PRF(b, ek.prf_key, id, result.mem_0);
-        PRF(b, ek.prf_key, id, result.mem_1);
+    MemoryHandle RLWEHSS::load(int party_id, int action_id, const InputHandle& input, const EvalKeyHandle& ek, 
+                               const ContextHandle& ctx) {
+        MemoryHandle result;
+
+        RLWEInputValue input_value = *std::static_pointer_cast<RLWEInputValue>(input);
+        RLWEEvalKey eval_key = *std::static_pointer_cast<RLWEEvalKey>(ek);
+        RLWEContext context = *std::static_pointer_cast<RLWEContext>(ctx);
+        RLWEMemoryValue value_of_s = {share_of_1, share_of_sk};
+
+        result = RLWE_DDEC(input, value_of_s, ctx);
+        PRF(party_id, eval_key.prf_key, action_id, result.v[0]);
+        PRF(party_id, eval_key.prf_key, action_id, result.v[1]);
         return result;
     }
 
-    Memory_Value RLWE_add_memory_values(int b, int id, const Memory_Value& mem0, const Memory_Value& mem1, const eval_key& ek) {
-        Memory_Value result;
-        result.mem_0 = mem0.mem_0 + mem1.mem_0;
-        result.mem_1 = mem0.mem_1 + mem1.mem_1;
-        PRF(b, ek.prf_key, id, result.mem_0);
-        PRF(b, ek.prf_key, id, result.mem_1);
+    MemoryHandle RLWEHSS::add_memory_values(int party_id, int action_id, const MemoryHandle& mem1, const MemoryHandle& mem2, 
+                                            const EvalKeyHandle& ek) {
+        RLWEMemoryValue result;
+
+        RLWEMemoryValue mem_1 = *std::static_pointer_cast<RLWEMemoryValue>(mem1);
+        RLWEMemoryValue mem_2 = *std::static_pointer_cast<RLWEMemoryValue>(mem2);
+        RLWEEvalKey eval_key = *std::static_pointer_cast<RLWEEvalKey>(ek);
+    
+        result.v[0] = mem_1.v[0] + mem_2.v[0];
+        result.v[1] = mem_1.v[1] + mem_2.v[1];
+        PRF(party_id, eval_key.prf_key, action_id, result.v[0]);
+        PRF(party_id, eval_key.prf_key, action_id, result.v[1]);
         return result;
     }
 
-    Input_Value RLWE_add_input_values(const Input_Value& input0, const Input_Value& input1) {
-        Input_Value result;
-        result.c_00 = input0.c_00 + input1.c_00;
-        result.c_01 = input0.c_01 + input1.c_01;
-        result.c_10 = input0.c_10 + input1.c_10;
-        result.c_11 = input0.c_11 + input1.c_11;
+    InputHandle RLWEHSS::add_input_values(const InputHandle& in1, const InputHandle& in2) {
+        RLWEInputValue result;
+
+        RLWEInputValue input0 = *std::static_pointer_cast<RLWEInputValue>(in1);
+        RLWEInputValue input1 = *std::static_pointer_cast<RLWEInputValue>(in2);
+
+        result.M[0][0] = input0.M[0][0] + input1.M[0][0];
+        result.M[0][1] = input0.M[0][1] + input1.M[0][1];
+        result.M[1][0] = input0.M[1][0] + input1.M[1][0];
+        result.M[1][1] = input0.M[1][1] + input1.M[1][1];
         return result;
     }
 
-    Memory_Value RLWE_multiply(int b, int id, const Input_Value& input, const Memory_Value& memory, const eval_key& ek, const Context& ctx) {
-        Memory_Value result;
-        result = RLWE_DDEC(input, memory, ctx);
-        PRF(b, ek.prf_key, id, result.mem_0);
-        PRF(b, ek.prf_key, id, result.mem_1);
+    MemoryHandle RLWEHSS::multiply(int party_id, int action_id, const MemoryHandle& mem, const InputHandle& in, 
+                                   const EvalKeyHandle& ek, const ContextHandle& ctx) {
+        RLWEMemoryValue result;
+        
+        auto memory = std::static_pointer_cast<RLWEMemoryValue>(mem);
+        auto input = std::static_pointer_cast<RLWEInputValue>(in);
+        auto eval_key = std::static_pointer_cast<RLWEEvalKey>(ek);
+        auto context = std::static_pointer_cast<RLWEContext>(ctx);
+
+        result = RLWE_DDEC(input, memory, context);
+        PRF(party_id, eval_key.prf_key, action_id, result.v[0]);
+        PRF(party_id, eval_key.prf_key, action_id, result.v[1]);
         return result;
     }
 
@@ -338,14 +362,14 @@ extern "C" {
         return conv<ZZ_pE>(rounded_value);
     }
 
-    Memory_Value RLWE_DDEC(const Input_Value& input, const Memory_Value& memory, const Context& ctx) {
-        Memory_Value result;
+    RLWEMemoryValue RLWE_DDEC(const RLWEInputValue& input, const RLWEMemoryValue& memory, const RLWEContext& ctx) {
+        RLWEMemoryValue result;
 
         ZZ_pE term0, term1;
-        term0 = round_poly(input.c_00 * memory.mem_0 + input.c_01 * memory.mem_1, ctx.p, ctx.q);
-        term1 = round_poly(input.c_10 * memory.mem_0 + input.c_11 * memory.mem_1, ctx.p, ctx.q);
-        result.mem_0 = term0;
-        result.mem_1 = term1;
+        term0 = round_poly(input.M[0][0] * memory.v[0] + input.M[0][1] * memory.v[1], ctx.p, ctx.q);
+        term1 = round_poly(input.M[1][0] * memory.v[0] + input.M[1][1] * memory.v[1], ctx.p, ctx.q);
+        result.v[0] = term0;
+        result.v[1] = term1;
 
         return result;
     }
