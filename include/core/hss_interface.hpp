@@ -23,7 +23,7 @@ public:
     virtual std::string get_math_family() const = 0; // e.g., "DCR", "LWE", "RLWE", "FHE"
 
     // --- Core Cryptographic Interface (Implemented by Concrete Schemes) ---
-    virtual void setup() = 0;
+    virtual void HSS_gen() = 0;
     virtual InputHandle sample_random_input() = 0;
     virtual MemoryHandle load(int party_id, int action_id, const InputHandle& input, 
                             const EvalKeyHandle& ek, const ContextHandle& ctx) = 0;

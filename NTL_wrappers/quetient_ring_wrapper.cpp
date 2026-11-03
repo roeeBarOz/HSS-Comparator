@@ -10,6 +10,7 @@
 #include <chrono>
 #include "quetient_ring_wrapper.h"
 #include "../PRF/aesni_ctr.c"
+#include "schemes/rlwe_hss.hpp"
 
 using namespace NTL;
 
@@ -113,7 +114,7 @@ extern "C" {
     }
 
     // LPR.Gen function, detailed at page 17
-    PKE_Gen_keys PKE_Gen() {
+    RLWEPKEGenKey PKE_Gen() {
 
         ZZ_pE a, b, s_hat;
 
@@ -139,11 +140,11 @@ extern "C" {
         // and continuously reduces everything modulo q and modulo A(x).
         b = a * s_hat + e; 
 
-        public_key pk;
+        RLWEPublicKey pk;
         pk.a = a;
         pk.b = b;
 
-        PKE_Gen_keys keys;
+        RLWEPKEGenKey keys;
         keys.pk = pk;
         keys.sk = s_hat; // sk should be (1, s_hat), but we handle it in HSS_Gen.
 
@@ -170,7 +171,7 @@ extern "C" {
         return ctx;
     }
 
-    HSS_Gen_keys HSS_Gen() {
+    HSSGenKeyHandle RLWEHSS::HSS_gen() {
         // Implementation for HSS key generation
 
         // setting seed for NTL random number generator
@@ -179,7 +180,7 @@ extern "C" {
         std::uniform_int_distribution<unsigned long> dis;
         SetSeed(conv<ZZ>(dis(gen)));
 
-        PKE_Gen_keys pke_gen_output = PKE_Gen();
+        RLWEPKEGenKey pke_gen_output = PKE_Gen();
         ZZ_pE s_0_0, s_0_1, s_1_0, s_1_1;
         random(s_0_0);
         random(s_0_1);
@@ -195,7 +196,7 @@ extern "C" {
             k[i] = dis_key(gen_key); // Random byte for AES key
         }
 
-        eval_key ek_0, ek_1;
+        RLWEEvalKey ek_0, ek_1;
         memcpy(ek_0.prf_key, k, 16);
         memcpy(ek_1.prf_key, k, 16);
         ek_0.share_of_1 = s_0_0;
@@ -203,7 +204,7 @@ extern "C" {
         ek_0.share_of_sk = s_0_1;
         ek_1.share_of_sk = s_1_1;
 
-        HSS_Gen_keys keys;
+        RLWEHSSGenKey keys;
         keys.eval_key0 = ek_0;
         keys.eval_key1 = ek_1;
         keys.pke_keys = pke_gen_output;
