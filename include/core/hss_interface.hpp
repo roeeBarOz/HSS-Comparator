@@ -30,9 +30,8 @@ public:
     virtual MemoryHandle multiply(int party_id, int action_id, const MemoryHandle& mem, 
                             const InputHandle& in, const EvalKeyHandle& ek, const ContextHandle& ctx) = 0;
     virtual MemoryHandle add_memory(int party_id, int action_id, const MemoryHandle& mem1, const MemoryHandle& mem2, 
-                            const EvalKeyHandle& ek, const ContextHandle& ctx) = 0;
-    virtual InputHandle add_inputs(const InputHandle& in1, const InputHandle& in2, const EvalKeyHandle& ek, 
-                            const ContextHandle& ctx) = 0;
+                            const EvalKeyHandle& ek) = 0;
+    virtual InputHandle add_inputs(const InputHandle& in1, const InputHandle& in2) = 0;
 
     // --- Metrics & Diagnostics ---
     virtual size_t get_share_size_bytes() const = 0;
@@ -44,14 +43,15 @@ public:
     BenchmarkResult benchmark_load(int party_id = 0, int iterations = 1000) {
         InputHandle in = sample_random_input();
         ContextHandle ctx = std::make_shared<IHSSContext>(); // Placeholder, replace with actual context initialization
-        MemoryHandle warmup = load(party_id, 0, in, ctx);
+        EvalKeyHandle ek = std::make_shared<IHSSEvalKey>(); // Placeholder, replace with actual eval key initialization
+        MemoryHandle warmup = load(party_id, 0, in, ek, ctx);
 
         std::vector<double> timings_us;
         timings_us.reserve(iterations);
 
         for (int i = 0; i < iterations; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
-            MemoryHandle res = load(party_id, 0, in, ctx);
+            MemoryHandle res = load(party_id, 0, in, ek, ctx);
             auto end = std::chrono::high_resolution_clock::now();
             
             double elapsed = std::chrono::duration<double, std::micro>(end - start).count();
@@ -68,15 +68,16 @@ public:
     BenchmarkResult benchmark_multiply(int party_id = 0, int iterations = 1000) {
         InputHandle in = sample_random_input();
         ContextHandle ctx = std::make_shared<IHSSContext>(); // Placeholder, replace with actual context initialization
-        MemoryHandle mem = load(party_id, 0, in, ctx);
-        MemoryHandle warmup = multiply(party_id, 0, mem, in, std::make_shared<IHSSEvalKey>(), ctx); // Placeholder, replace with actual eval key initialization
+        EvalKeyHandle ek = std::make_shared<IHSSEvalKey>(); // Placeholder, replace with actual eval key initialization
+        MemoryHandle mem = load(party_id, 0, in, ek, ctx);
+        MemoryHandle warmup = multiply(party_id, 0, mem, in, ek, ctx); // Placeholder, replace with actual eval key initialization
 
         std::vector<double> timings_us;
         timings_us.reserve(iterations);
 
         for (int i = 0; i < iterations; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
-            MemoryHandle res = multiply(party_id, 0, mem, in, std::make_shared<IHSSEvalKey>(), ctx);
+            MemoryHandle res = multiply(party_id, 0, mem, in, ek, ctx);
             auto end = std::chrono::high_resolution_clock::now();
 
             double elapsed = std::chrono::duration<double, std::micro>(end - start).count();
@@ -93,16 +94,18 @@ public:
     BenchmarkResult benchmark_add_memory(int party_id = 0, int iterations = 1000) {
         InputHandle in1 = sample_random_input();
         InputHandle in2 = sample_random_input();
-        MemoryHandle mem1 = load(party_id, in1);
-        MemoryHandle mem2 = load(party_id, in2);
-        MemoryHandle warmup = add_memory(party_id, mem1, mem2);
+        EvalKeyHandle ek = std::make_shared<IHSSEvalKey>(); // Placeholder, replace with actual eval key initialization
+        ContextHandle ctx = std::make_shared<IHSSContext>(); // Placeholder, replace with actual context initialization
+        MemoryHandle mem1 = load(party_id, 0, in1, ek, ctx);
+        MemoryHandle mem2 = load(party_id, 0, in2, ek, ctx);
+        MemoryHandle warmup = add_memory(party_id, 0, mem1, mem2, ek);
 
         std::vector<double> timings_us;
         timings_us.reserve(iterations);
 
         for (int i = 0; i < iterations; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
-            MemoryHandle res = add_memory(party_id, 0, mem1, mem2, std::make_shared<IHSSEvalKey>(), std::make_shared<IHSSContext>());
+            MemoryHandle res = add_memory(party_id, 0, mem1, mem2, ek);
             auto end = std::chrono::high_resolution_clock::now();
 
             double elapsed = std::chrono::duration<double, std::micro>(end - start).count();
