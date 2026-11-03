@@ -83,6 +83,15 @@ public:
     }
 };
 
+class RLWEOutputValue : public IHSSOutputValue {
+public:
+    NTL::ZZ_pE out;
+
+    size_t get_size_bytes() const override {
+        return NTL::NumBytes(out);
+    }
+};
+
 class RLWEHSS : public IHSSScheme {
 public:
     HSSGenKeyHandle HSS_gen() override;
