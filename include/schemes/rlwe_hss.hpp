@@ -25,8 +25,8 @@ public:
 class RLWEEvalKey : public IHSSEvalKey {
 public:
     uint8_t prf_key[16]; // 128-bit key for AES
-    ZZ_pE share_of_1;
-    ZZ_pE share_of_sk;
+    NTL::ZZ_pE share_of_1;
+    NTL::ZZ_pE share_of_sk;
 
     size_t get_size_bytes() const override {
         return 16 + NTL::NumBytes(share_of_1) + NTL::NumBytes(share_of_sk);
@@ -40,6 +40,46 @@ public:
 
     size_t get_size_bytes() const override {
         return NTL::NumBytes(p) + NTL::NumBytes(q);
+    }
+};
+
+class RLWEPublicKey : public IHSSPublicKey {
+public:
+    NTL::ZZ_pE a;
+    NTL::ZZ_pE b;
+
+    size_t get_size_bytes() const override {
+        return NTL::NumBytes(a) + NTL::NumBytes(b);
+    }
+};
+
+class RLWEPKEGenKey : public IHSSPKEGenKey {
+public:
+    RLWEPublicKey pk;
+    NTL::ZZ_pE sk;
+
+    size_t get_size_bytes() const override {
+        return pk.get_size_bytes() + NTL::NumBytes(sk);
+    }
+};
+
+class RLWEHSSGenKey : public IHSSHSSGenKey {
+public:
+    RLWEPKEGenKey pke_keys;
+    RLWEEvalKey eval_key0;
+    RLWEEvalKey eval_key1;
+
+    size_t get_size_bytes() const override {
+        return pke_keys.get_size_bytes() + eval_key0.get_size_bytes() + eval_key1.get_size_bytes();
+    }
+};
+
+class RLWEEncryption : public IHSSEncryption {
+public:
+    NTL::ZZ_pE c[2];
+
+    size_t get_size_bytes() const override {
+        return NTL::NumBytes(c[0]) + NTL::NumBytes(c[1]);
     }
 };
 
