@@ -34,7 +34,12 @@ public:
 class PaillierEvalKey : public IHSSEvalKey {
 public:
     uint8_t prf_key[16]; // 128-bit PRF key
-    std::vector<ZZ> digits; // Precomputed digits for efficient multiplication
+    std::vector<ZZ> digits;
+
+    PaillierEvalKey(uint8_t* key, const std::vector<ZZ>& digits) {
+        std::copy(key, key + 16, prf_key);
+        this->digits = digits;
+    }
 
     size_t get_size_bytes() const override {
         size_t size = sizeof(prf_key);
@@ -51,6 +56,8 @@ public:
     ZZ kappa;
     ZZ l;
 
+    PaillierContext() : Bsk(0), kappa(0), l(0) {}
+
     size_t get_size_bytes() const override {
         return NumBytes(Bsk) + NumBytes(kappa) + NumBytes(l);
     }
@@ -58,11 +65,13 @@ public:
 
 class PaillierPublicKey : public IHSSPublicKey {
 public:
-    ZZ N;
+    ZZ pk_paillier;
     ZZ sk;
 
+    PaillierPublicKey(const ZZ& pk_paillier, const ZZ& sk) : pk_paillier(pk_paillier), sk(sk) {}
+
     size_t get_size_bytes() const override {
-        return NumBytes(N) + NumBytes(sk);
+        return NumBytes(pk_paillier) + NumBytes(sk);
     }
 };
 
@@ -70,6 +79,9 @@ class PaillierPKEGenKey : public IHSSPKEGenKey {
 public:
     PaillierPublicKey pk;
     std::vector<PaillierEncryption> encrypted_digits;
+
+    PaillierPKEGenKey(const PaillierPublicKey& pk, const std::vector<PaillierEncryption>& encrypted_digits)
+        : pk(pk), encrypted_digits(encrypted_digits) {}
 
     size_t get_size_bytes() const override {
         size_t size = pk.get_size_bytes();
@@ -85,6 +97,9 @@ public:
     PaillierPKEGenKey pke_keys;
     PaillierEvalKey eval_key0;
     PaillierEvalKey eval_key1;
+
+    PaillierHSSGenKey(const PaillierPKEGenKey& pke_keys, const PaillierEvalKey& eval_key0, const PaillierEvalKey& eval_key1)
+        : pke_keys(pke_keys), eval_key0(eval_key0), eval_key1(eval_key1) {}
 
     size_t get_size_bytes() const override {
         return pke_keys.get_size_bytes() + eval_key0.get_size_bytes() + eval_key1.get_size_bytes();
@@ -123,7 +138,7 @@ public:
         return "DCR";
     }
 
-    HSSGenKeyHandle HSS_gen() override;
+    HSSGenKeyHandle HSS_gen(const PaillierContext& ctx) override;
     InputHandle HSS_Enc(const PublicKeyHandle& pk, const ZZ& x, const ContextHandle& ctx, int k) override;
     MemoryHandle load(int party_id, int action_id, const InputHandle& input, const EvalKeyHandle& ek, const ContextHandle& ctx) override;
     MemoryHandle multiply(int party_id, int action_id, const MemoryHandle& mem, const InputHandle& in, const EvalKeyHandle& ek, const ContextHandle& ctx) override;
@@ -135,6 +150,9 @@ class PaillierHelper {
 public:
     ZZ_p DDLog(ZZ_p x, ZZ yd);
     ZZ construct_yd(ZZ Bsk, PaillierMemoryValue& mem);
+    std::vector<ZZ> decompose_sk(const ZZ& sk, const ZZ& Bsk);
+    uint8_t* generate_random_prf_key();
+    ZZ_p encrypt(const PaillierPublicKey& pk, const ZZ& m);
 }
 
 #endif // PAILLIER_HSS_HPP
